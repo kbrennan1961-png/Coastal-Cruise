@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Coastal Cruise — Trailer Park Arcade Driving</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud">
+    <div id="challengePanel" class="panel">
+      <div class="panelHead">TIME TRIALS <span class="dim">glowing gates</span></div>
+      <div id="challengeBody"></div>
+    </div>
+
+    <div id="vehiclePanel" class="panel">
+      <div class="panelHead">VEHICLE <span class="dim">keys 1–5</span></div>
+      <div id="vehicleName">Motorcycle</div>
+      <div id="vehicleDesc" class="dim"></div>
+      <div class="vehList">
+        <button class="vehBtn active" data-key="motorcycle"><b>1</b> Bike</button>
+        <button class="vehBtn" data-key="atv"><b>2</b> ATV</button>
+        <button class="vehBtn" data-key="cart"><b>3</b> Cart</button>
+        <button class="vehBtn" data-key="car"><b>4</b> Car</button>
+        <button class="vehBtn" data-key="truck"><b>5</b> Truck</button>
+      </div>
+      <div class="smallRow"><span id="surface">Paved</span><span id="camMode">Chase</span></div>
+    </div>
+
+    <div id="gaugeWrap" class="panel">
+      <canvas id="gauge" width="150" height="150"></canvas>
+    </div>
+
+    <div id="minimapWrap" class="panel">
+      <div class="panelHead">MAP <span class="dim">M to hide</span></div>
+      <canvas id="minimap" width="200" height="200"></canvas>
+    </div>
+
+    <div id="help" class="panel hidden">
+      <div class="panelHead">CONTROLS <span class="dim">H to close</span></div>
+      <div class="helpGrid">
+        <span>W / ↑</span><span>Accelerate</span>
+        <span>S / ↓</span><span>Brake / reverse</span>
+        <span>A D / ← →</span><span>Steer</span>
+        <span>Space</span><span>Handbrake / drift</span>
+        <span>Shift</span><span>Boost</span>
+        <span>C</span><span>Camera: chase / hood / orbit</span>
+        <span>R</span><span>Reset / flip vehicle</span>
+        <span>1 – 5</span><span>Switch vehicle</span>
+        <span>M</span><span>Toggle minimap</span>
+      </div>
+      <div class="helpNote">Drive through the first glowing gate of a time trial to start it. Hit every gate in order to set a best time (saved locally).</div>
+    </div>
+
+    <div id="toast"></div>
+    <div id="hint">Click or press a key to enable engine audio</div>
+  </div>
+
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/vehicles.js"></script>
+  <script src="js/npcs.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

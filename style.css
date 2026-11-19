@@ -1,0 +1,152 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #101a20;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  color: #f4f7f5;
+  user-select: none;
+}
+
+#game, #game canvas { position: fixed; inset: 0; display: block; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; }
+
+.panel {
+  position: absolute;
+  background: rgba(10, 26, 34, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 10px 12px;
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.22);
+}
+
+.panelHead {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: #9fe6ff;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+
+.dim { opacity: 0.6; font-weight: 400; letter-spacing: 0.04em; }
+
+/* challenge panel */
+#challengePanel { top: 18px; left: 18px; width: 260px; }
+.challengeTitle { font-size: 16px; font-weight: 700; color: #ffd166; margin-bottom: 2px; }
+.challengeTime { font-size: 30px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.challengeSub { font-size: 11px; opacity: 0.75; margin-top: 4px; }
+.challengeSub.hint { opacity: 0.8; font-style: italic; margin-bottom: 8px; }
+.challengeRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.challengeRow b { font-variant-numeric: tabular-nums; opacity: 0.85; font-weight: 600; }
+
+/* vehicle panel */
+#vehiclePanel { top: 18px; right: 18px; width: 250px; pointer-events: auto; }
+#vehicleName { font-size: 19px; font-weight: 800; }
+#vehicleDesc { font-size: 11px; margin: 2px 0 9px; min-height: 14px; }
+.vehList { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.vehBtn {
+  pointer-events: auto;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef6f6;
+  border-radius: 7px;
+  padding: 6px 2px;
+  font-size: 10px;
+  line-height: 1.1;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.vehBtn b { display: block; font-size: 13px; color: #9fe6ff; margin-bottom: 2px; }
+.vehBtn:hover { background: rgba(159, 230, 255, 0.18); }
+.vehBtn:active { transform: translateY(1px); }
+.vehBtn.active { background: rgba(255, 209, 102, 0.22); border-color: #ffd166; }
+.vehBtn.active b { color: #ffd166; }
+.smallRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+/* gauge */
+#gaugeWrap { bottom: 18px; left: 18px; padding: 4px; border-radius: 50%; }
+#gauge { display: block; }
+
+/* minimap */
+#minimapWrap { bottom: 18px; right: 18px; padding: 9px; }
+#minimapWrap.collapsed #minimap { display: none; }
+#minimap { display: block; border-radius: 6px; image-rendering: auto; }
+
+/* help */
+#help { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 430px; pointer-events: auto; }
+.hidden { display: none !important; }
+.helpGrid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 5px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.helpGrid span:nth-child(odd) { color: #9fe6ff; font-weight: 700; }
+.helpNote { font-size: 11px; opacity: 0.72; line-height: 1.45; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; }
+
+/* toast + hint */
+#toast {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translate(-50%, -12px);
+  background: rgba(10, 26, 34, 0.86);
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  color: #ffe9b0;
+  padding: 9px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+#hint {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  animation: hintFade 1s 7s forwards;
+}
+@keyframes hintFade { to { opacity: 0; visibility: hidden; } }
+
+@media (max-width: 760px) {
+  #challengePanel { width: 190px; }
+  #vehiclePanel { width: 205px; }
+  .vehList { grid-template-columns: repeat(3, 1fr); }
+  #gaugeWrap { transform: scale(0.78); transform-origin: bottom left; }
+  #minimapWrap { transform: scale(0.78); transform-origin: bottom right; }
+  #help { width: 92vw; }
+}
