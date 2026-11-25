@@ -160,21 +160,27 @@ build instead, for example
 
 It opens the game from `file://`, drives a coupe along Main Street, follows a
 pedestrian on the boardwalk, flies a jetpack over the harbor, then finishes with
-a low bridge chase. The WebGL canvas is captured with `MediaRecorder` and the
-default `media/base_211.m4a` is muxed into
+a low bridge chase. The harness pauses the normal animation loop and steps the
+game deterministically, saving each rendered WebGL frame. This avoids the
+near-static videos that `MediaRecorder` produces when a headless browser
+throttles animation frames. The default `media/base_211.m4a` is muxed into
 `capture/coastal-cruise-trailer.mp4`.
 
 Useful options:
 
 ```bash
-npm run trailer -- --url http://192.168.0.77/ --music audio/playback-fm.mp3
-npm run trailer -- --no-music --out capture/test.webm --units 0.1
-npm run trailer -- --width 1920 --height 1080 --bitrate 12000000
+npm run trailer -- --music audio/playback-fm.mp3
+npm run trailer -- --no-music --out capture/test.webm --units 0.1 --fps 12
+npm run trailer -- --music media/base_211.m4a --width 960 --height 540 \
+  --fps 12 --scale 1920x1080 --out capture/my-trailer.mp4
 ```
 
-`--units 0.1` produces a short smoke test. `--keep-raw` keeps the intermediate
-WebM. The scripted input path is in `tools/trailer-runtime.js`; change the
-waypoint lists and segment durations there to restage the trailer.
+`--units 0.1` produces a short smoke test. `--fps` sets how many deterministic
+frames are rendered per timeline second; lower values finish faster on software
+GL. `--scale` resizes the encoded video, so a 960×540 capture can be delivered
+as 1920×1080. `--keep-raw` keeps the intermediate JPEG frames. The scripted
+input path is in `tools/trailer-runtime.js`; change the waypoint lists and
+segment durations there to restage the trailer.
 
 The game opens with a **“The Harbor” intro splash screen**. Choose **Start Cruising** (or press `Enter`, or gamepad `A`) for the gate challenges, or **Free Roam** (or press `F`) to hide the rings and drive with no timer. That first gesture also enables audio and starts the radio; browsers block autoplay until you interact with the page. While the town loads you can choose a **local music or video file** with the 🎵/🎬 buttons on the splash; it loops in the background and stops the moment you start driving. Nothing is uploaded — the file stays on your computer.
 

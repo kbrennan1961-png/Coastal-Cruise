@@ -3600,8 +3600,13 @@
 
   /* ---------- main loop ---------- */
   let last = performance.now();
+  Game.manualFrame = false;
   function frame(now) {
     requestAnimationFrame(frame);
+    if (Game.manualFrame) { last = now; return; }
+    tick(now);
+  }
+  function tick(now) {
     const rawDt = (now - last) / 1000;
     let dt = rawDt;
     last = now;
@@ -3798,6 +3803,18 @@
     }
     Game.renderer.render(Game.scene, Game.camera);
   }
+
+  // Deterministic stepping hook used by the trailer harness. While manualFrame
+  // is set, the normal requestAnimationFrame loop skips simulation and render,
+  // so a capture can advance both at a fixed rate regardless of browser
+  // throttling.
+  Game.stepFrame = function (dt) {
+    if (!Game.manualFrame) return false;
+    const seconds = Number(dt);
+    if (!Number.isFinite(seconds) || seconds <= 0) return false;
+    tick(last + seconds * 1000);
+    return true;
+  };
 
   /* ---------- boot ---------- */
   window.addEventListener('DOMContentLoaded', async function () {

@@ -25,6 +25,11 @@ function number(flag, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function scale(flag, fallback) {
+  const match = /^(\d+)[xX](\d+)$/.exec(value(flag, ''));
+  return match ? `${match[1]}:${match[2]}` : fallback;
+}
+
 function resolvePath(p) {
   return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
 }
@@ -45,7 +50,8 @@ Options:
   --fps N            Capture frame rate (default: 60)
   --bitrate N        WebM video bitrate (default: 8000000)
   --units N          Timeline scale; 0.1 is useful for smoke tests
-  --keep-raw         Keep the intermediate WebM after MP4 muxing
+  --keep-raw         Keep intermediate frames/WebM after encoding
+  --scale WxH        Resize output video, e.g. 1920x1080
   --chromium PATH     Use a specific Chromium binary (or set CC_CHROMIUM_PATH)
   --debug            Print browser console messages
   --help             Show this text
@@ -71,6 +77,7 @@ async function main() {
     bitrate: number('--bitrate', 8000000),
     units: number('--units', 1),
     keepRaw: has('--keep-raw'),
+    scale: scale('--scale', null),
     chromium: process.env.CC_CHROMIUM_PATH || value('--chromium', null),
     debug: has('--debug')
   };
@@ -79,6 +86,9 @@ async function main() {
   fs.mkdirSync(captureDir, { recursive: true });
   const rawPath = path.join(captureDir, `coastal-cruise-raw-${Date.now()}.webm`);
   fs.writeFileSync(rawPath, Buffer.alloc(0));
+  const frameDir = path.join(captureDir, `frames-${Date.now()}`);
+  fs.mkdirSync(frameDir, { recursive: true });
+  let frameCount = 0;
 
   console.log(`Trailer: ${opts.url}`);
   console.log(`Capture: ${opts.width}x${opts.height} @ ${opts.fps} fps`);
@@ -100,6 +110,10 @@ async function main() {
     });
     await context.exposeBinding('__ccTrailerChunk', async (_source, base64) => {
       fs.appendFileSync(rawPath, Buffer.from(base64, 'base64'));
+    });
+    await context.exposeBinding('__ccTrailerFrame', async (_source, base64) => {
+      const file = path.join(frameDir, `frame-${String(frameCount++).padStart(6, '0')}.jpg`);
+      await fs.promises.writeFile(file, Buffer.from(base64, 'base64'));
     });
 
     const page = await context.newPage();
@@ -124,18 +138,22 @@ async function main() {
 
     const captureInfo = await page.evaluate((options) => window.CCTrailer.startCapture(options), {
       fps: opts.fps,
-      bitrate: opts.bitrate
+      bitrate: opts.bitrate,
+      width: opts.width,
+      height: opts.height,
+      manual: true
     });
-    console.log(`Recorder: ${captureInfo.mime}`);
+    console.log(`Capture mode: ${captureInfo.mode || 'recorder'} (${captureInfo.mime})`);
 
     let runError = null;
+    let stopped = null;
     try {
       const result = await page.evaluate((units) => window.CCTrailer.run({ units }), opts.units);
       console.log(`Timeline complete: ${Math.round(result.durationMs / 1000)}s`);
     } catch (err) {
       runError = err;
     } finally {
-      const stopped = await page.evaluate(() => window.CCTrailer.stopCapture());
+      stopped = await page.evaluate(() => window.CCTrailer.stopCapture());
       if (stopped.inline && stopped.inline.length) {
         for (const base64 of stopped.inline) {
           fs.appendFileSync(rawPath, Buffer.from(base64, 'base64'));
@@ -148,36 +166,85 @@ async function main() {
 
     if (runError) throw runError;
 
-    const rawBytes = fs.statSync(rawPath).size;
-    if (!rawBytes) throw new Error('MediaRecorder produced an empty video');
-    console.log(`Raw WebM: ${(rawBytes / 1048576).toFixed(1)} MiB`);
+    const manualFrames = !!(stopped && stopped.mode === 'frames');
+    const frames = manualFrames ? (stopped.frames || frameCount) : 0;
+    if (manualFrames) {
+      if (!frames) throw new Error('No deterministic frames were captured');
+      console.log(`Captured ${frames} frames at ${opts.fps} fps (${(frames / opts.fps).toFixed(1)}s)`);
+    } else {
+      const rawBytes = fs.statSync(rawPath).size;
+      if (!rawBytes) throw new Error('MediaRecorder produced an empty video');
+      console.log(`Raw WebM: ${(rawBytes / 1048576).toFixed(1)} MiB`);
+    }
 
     const musicAvailable = !opts.noMusic && fs.existsSync(opts.music);
     if (!opts.noMusic && !musicAvailable) {
-      console.warn(`Music not found (${opts.music}); keeping silent WebM.`);
+      console.warn(`Music not found (${opts.music}); keeping silent video.`);
     }
 
-    if (musicAvailable) {
+    const ffmpeg = require('ffmpeg-static');
+    const scaleArgs = opts.scale ? ['-vf', `scale=${opts.scale}:flags=lanczos`] : [];
+    fs.mkdirSync(path.dirname(opts.out), { recursive: true });
+
+    if (manualFrames) {
+      const inputPattern = path.join(frameDir, 'frame-%06d.jpg');
+      if (musicAvailable) {
+        const duration = frames / opts.fps;
+        const fadeOut = Math.min(2, Math.max(0.5, duration / 6));
+        const filter = `atrim=0:${duration},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.8,afade=t=out:st=${Math.max(0, duration - fadeOut)}:d=${fadeOut}`;
+        await execFileAsync(ffmpeg, [
+          '-y', '-hide_banner', '-loglevel', 'error',
+          '-framerate', String(opts.fps), '-i', inputPattern,
+          '-i', opts.music,
+          '-filter_complex', `[1:a]${filter}[a]`,
+          '-map', '0:v:0', '-map', '[a]',
+          ...scaleArgs,
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac', '-b:a', '192k',
+          '-shortest', '-movflags', '+faststart', opts.out
+        ], { maxBuffer: 8 * 1024 * 1024 });
+      } else if (path.extname(opts.out).toLowerCase() === '.webm') {
+        await execFileAsync(ffmpeg, [
+          '-y', '-hide_banner', '-loglevel', 'error',
+          '-framerate', String(opts.fps), '-i', inputPattern,
+          ...scaleArgs,
+          '-c:v', 'libvpx-vp9', '-b:v', String(opts.bitrate), '-pix_fmt', 'yuv420p',
+          '-an', opts.out
+        ], { maxBuffer: 8 * 1024 * 1024 });
+      } else {
+        await execFileAsync(ffmpeg, [
+          '-y', '-hide_banner', '-loglevel', 'error',
+          '-framerate', String(opts.fps), '-i', inputPattern,
+          ...scaleArgs,
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-an', '-movflags', '+faststart', opts.out
+        ], { maxBuffer: 8 * 1024 * 1024 });
+      }
+      if (!opts.keepRaw) {
+        fs.rmSync(frameDir, { recursive: true, force: true });
+        fs.rmSync(rawPath, { force: true });
+      }
+    } else if (musicAvailable) {
       const duration = 44 * opts.units;
       const fadeOut = Math.min(2, Math.max(0.5, duration / 6));
       const filter = `atrim=0:${duration},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.8,afade=t=out:st=${Math.max(0, duration - fadeOut)}:d=${fadeOut}`;
-      fs.mkdirSync(path.dirname(opts.out), { recursive: true });
-      await execFileAsync(require('ffmpeg-static'), [
+      await execFileAsync(ffmpeg, [
         '-y', '-hide_banner', '-loglevel', 'error',
         '-i', rawPath,
         '-i', opts.music,
         '-filter_complex', `[1:a]${filter}[a]`,
         '-map', '0:v:0', '-map', '[a]',
+        ...scaleArgs,
         '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '192k',
         '-shortest', opts.out
       ], { maxBuffer: 8 * 1024 * 1024 });
       if (!opts.keepRaw) fs.rmSync(rawPath, { force: true });
     } else if (path.extname(opts.out).toLowerCase() !== '.webm') {
-      fs.mkdirSync(path.dirname(opts.out), { recursive: true });
-      await execFileAsync(require('ffmpeg-static'), [
+      await execFileAsync(ffmpeg, [
         '-y', '-hide_banner', '-loglevel', 'error',
         '-i', rawPath,
+        ...scaleArgs,
         '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p',
         '-an', opts.out
       ], { maxBuffer: 8 * 1024 * 1024 });

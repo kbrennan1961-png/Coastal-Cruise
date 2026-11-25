@@ -46,7 +46,11 @@
   };
 
   var originalRead = null;
-  var capture = { recorder: null, chunks: [], chain: Promise.resolve(), mime: '', inline: [] };
+  var capture = {
+    recorder: null, chunks: [], chain: Promise.resolve(), mime: '', inline: [],
+    track: null, originalRender: null, renderPatched: false,
+    manual: false, fps: 24, frames: 0, width: 0, height: 0
+  };
 
   function groundInput(v) {
     var path = T.path;
@@ -124,7 +128,37 @@
   }
 
   function wait(ms) {
+    if (capture.manual && typeof G.stepFrame === 'function') {
+      var steps = Math.max(1, Math.round(ms / 1000 * capture.fps));
+      var dt = 1 / capture.fps;
+      var sequential = Promise.resolve();
+      for (var i = 0; i < steps; i++) {
+        sequential = sequential.then(function () {
+          G.stepFrame(dt);
+          return captureFrame();
+        });
+      }
+      return sequential;
+    }
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function captureFrame() {
+    var canvas = G.renderer && G.renderer.domElement;
+    if (!canvas) return Promise.resolve();
+    var dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    var comma = dataUrl.indexOf(',');
+    var b64 = comma >= 0 ? dataUrl.slice(comma + 1) : '';
+    if (!b64) return Promise.resolve();
+    capture.frames += 1;
+    if (typeof window.__ccTrailerFrame === 'function') {
+      capture.chain = capture.chain.then(function () {
+        return window.__ccTrailerFrame(b64);
+      });
+      return capture.chain;
+    }
+    capture.inline.push(b64);
+    return Promise.resolve();
   }
 
   function hideUi() {
@@ -156,7 +190,8 @@
     }
     if (G.renderer) {
       G.renderer.setPixelRatio(1);
-      G.renderer.setSize(window.innerWidth, window.innerHeight, false);
+      G.renderer.setSize(capture.width || window.innerWidth,
+        capture.height || window.innerHeight, false);
     }
     G.basePixelRatio = 1;
     G.resCooldown = 1000000;
@@ -243,15 +278,36 @@
   function startCapture(options) {
     options = options || {};
     var canvas = G.renderer && G.renderer.domElement;
-    if (!canvas || !canvas.captureStream) {
-      throw new Error('This browser cannot capture the WebGL canvas stream');
-    }
+    if (!canvas) throw new Error('The game has no WebGL canvas to capture');
     // Adaptive resolution normally lowers the drawing buffer on software GL.
-    // Pin it for the capture so MediaRecorder sees the requested viewport size.
+    // Pin it for the capture so every frame has the requested dimensions.
     G.basePixelRatio = 1;
     G.resCooldown = Number.POSITIVE_INFINITY;
-    G.renderer.setPixelRatio(1);
-    G.renderer.setSize(window.innerWidth, window.innerHeight, false);
+    capture.fps = options.fps || 24;
+    capture.width = options.width || canvas.width || window.innerWidth;
+    capture.height = options.height || canvas.height || window.innerHeight;
+    capture.frames = 0;
+    capture.inline = [];
+    capture.chain = Promise.resolve();
+
+    // Preferred path: step simulation and rendering ourselves, then export each
+    // canvas frame. Headless browsers throttle animation frames severely, which
+    // makes MediaRecorder produce a nearly static clip even though the game
+    // state changes.
+    if (typeof G.stepFrame === 'function' && options.manual !== false) {
+      capture.manual = true;
+      G.manualFrame = true;
+      G.renderer.setPixelRatio(1);
+      G.renderer.setSize(capture.width, capture.height, false);
+      return {
+        ok: true, mode: 'frames', mime: 'image/jpeg', fps: capture.fps,
+        width: capture.width, height: capture.height
+      };
+    }
+
+    if (!canvas.captureStream) {
+      throw new Error('This browser cannot capture the WebGL canvas stream');
+    }
     var types = [
       'video/webm;codecs=vp9',
       'video/webm;codecs=vp8',
@@ -259,15 +315,25 @@
     ];
     var mime = types.find(function (t) { return window.MediaRecorder && MediaRecorder.isTypeSupported(t); });
     if (!mime) throw new Error('MediaRecorder WebM is not supported');
-    var stream = canvas.captureStream(options.fps || 60);
+    var stream = canvas.captureStream(0);
+    capture.track = stream.getVideoTracks()[0] || null;
     var recorder = new MediaRecorder(stream, {
       mimeType: mime,
       videoBitsPerSecond: options.bitrate || 8000000
     });
     capture.chunks = [];
-    capture.inline = [];
-    capture.chain = Promise.resolve();
     capture.mime = mime;
+    if (capture.track && typeof capture.track.requestFrame === 'function' && G.renderer) {
+      var renderer = G.renderer;
+      var originalRender = renderer.render;
+      renderer.render = function () {
+        var result = originalRender.apply(renderer, arguments);
+        try { capture.track.requestFrame(); } catch (ignored) {}
+        return result;
+      };
+      capture.originalRender = originalRender;
+      capture.renderPatched = true;
+    }
     recorder.ondataavailable = function (e) {
       if (!e.data || !e.data.size) return;
       capture.chain = capture.chain
@@ -279,17 +345,30 @@
     };
     recorder.start(1000);
     capture.recorder = recorder;
-    return { ok: true, mime: mime };
+    return { ok: true, mode: 'recorder', mime: mime };
   }
 
   function stopCapture() {
+    if (capture.manual) {
+      capture.manual = false;
+      G.manualFrame = false;
+      return capture.chain.then(function () {
+        return { ok: true, mode: 'frames', frames: capture.frames, inline: capture.inline };
+      });
+    }
     return new Promise(function (resolve, reject) {
       var recorder = capture.recorder;
       if (!recorder) { resolve({ ok: false, reason: 'not recording' }); return; }
       recorder.onerror = function (e) { reject(e.error || new Error('MediaRecorder failed')); };
       recorder.onstop = function () {
         capture.chain.then(function () {
-          resolve({ ok: true, mime: capture.mime, inline: capture.inline });
+          if (capture.renderPatched && G && G.renderer && capture.originalRender) {
+            G.renderer.render = capture.originalRender;
+            capture.renderPatched = false;
+            capture.originalRender = null;
+          }
+          if (capture.track && typeof capture.track.stop === 'function') capture.track.stop();
+          resolve({ ok: true, mode: 'recorder', mime: capture.mime, inline: capture.inline });
         }, reject);
       };
       recorder.stop();
