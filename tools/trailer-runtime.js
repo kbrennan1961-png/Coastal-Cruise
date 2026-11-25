@@ -246,6 +246,12 @@
     if (!canvas || !canvas.captureStream) {
       throw new Error('This browser cannot capture the WebGL canvas stream');
     }
+    // Adaptive resolution normally lowers the drawing buffer on software GL.
+    // Pin it for the capture so MediaRecorder sees the requested viewport size.
+    G.basePixelRatio = 1;
+    G.resCooldown = Number.POSITIVE_INFINITY;
+    G.renderer.setPixelRatio(1);
+    G.renderer.setSize(window.innerWidth, window.innerHeight, false);
     var types = [
       'video/webm;codecs=vp9',
       'video/webm;codecs=vp8',
