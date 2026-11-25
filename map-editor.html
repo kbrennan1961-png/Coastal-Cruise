@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coastal Cruise — Map Editor</title>
+  <link rel="stylesheet" href="map-editor.css" />
+</head>
+<body>
+  <header id="toolbar">
+    <div class="brand">COASTAL CRUISE <span>MAP EDITOR</span></div>
+    <div class="toolgroup" id="tools">
+      <button class="tool active" data-tool="select" title="Select / move (V)">↖ <span>Select</span></button>
+      <button class="tool" data-tool="road" title="Draw road polyline (B)">╱ <span>Road</span></button>
+      <button class="tool" data-tool="roadErase" title="Erase / split road (E)">⌫ <span>Erase road</span></button>
+      <button class="tool" data-tool="building" title="Drag to place a building (R)">▭ <span>Building</span></button>
+      <button class="tool" data-tool="bridge" title="Drag to place a bridge + road (G)">≋ <span>Bridge</span></button>
+      <button class="tool" data-tool="tree" title="Place a tree (T)">♣ <span>Tree</span></button>
+      <button class="tool" data-tool="assetErase" title="Erase an asset (X)">✕ <span>Erase asset</span></button>
+      <button class="tool" data-tool="pan" title="Pan the map (H)">✥ <span>Pan</span></button>
+    </div>
+    <div class="toolgroup">
+      <button id="undoBtn" title="Undo (Ctrl+Z)">↶</button>
+      <button id="redoBtn" title="Redo (Ctrl+Y)">↷</button>
+      <button id="gridBtn" class="toggle on" title="Toggle coordinate grid"># <span>Grid</span></button>
+      <button id="zoomInBtn" title="Zoom in (+)">＋</button>
+      <button id="zoomOutBtn" title="Zoom out (-)">－</button>
+      <button id="zoomFitBtn" title="Fit whole map (0)">⤢</button>
+    </div>
+    <div class="toolgroup right">
+      <button id="newGameBtn" title="Start a standalone game in a new folder">🏗 <span>New game</span></button>
+      <button id="newMapBtn" title="Start a blank map project">✚ <span>New map</span></button>
+      <button id="importBtn" title="Import OSM, GeoJSON or JSON map data">⤓ <span>Import data</span></button>
+      <button id="resetBtn" title="Discard edits and reload the baked map">↺ <span>Reset</span></button>
+      <button id="loadBtn" title="Load an existing MapEdits.js patch">📂 <span>Load patch</span></button>
+      <button id="copyBtn" title="Copy generated patch JS to clipboard">⧉ <span>Copy JS</span></button>
+      <button id="applyBtn" class="primary" title="Export the patch the game will load">✔ <span>Apply to game</span></button>
+      <input type="file" id="loadInput" accept=".js,.json,.txt" hidden />
+      <input type="file" id="importInput" accept=".osm,.xml,.json,.geojson,.txt" hidden />
+      <input type="file" id="sourceFolderInput" webkitdirectory directory multiple hidden />
+    </div>
+  </header>
+
+  <main>
+    <div id="canvasWrap">
+      <canvas id="mapCanvas"></canvas>
+      <div id="toolHint">Select: click an asset or road point, then drag to move it.</div>
+      <div id="draftHint" hidden></div>
+    </div>
+
+    <aside id="sidebar">
+      <section>
+        <h2>SELECTION</h2>
+        <div id="selectionEmpty" class="empty">Nothing selected.</div>
+        <div id="selectionForm" hidden>
+          <label>Type <input id="selType" disabled /></label>
+          <label>Name <input id="selName" /></label>
+          <div class="row">
+            <label>X <input id="selX" type="number" step="1" /></label>
+            <label>Z <input id="selZ" type="number" step="1" /></label>
+          </div>
+          <div class="row">
+            <label>Width <input id="selW" type="number" step="0.5" /></label>
+            <label>Length <input id="selL" type="number" step="0.5" /></label>
+          </div>
+          <div class="row">
+            <label>Rotation <input id="selRot" type="number" step="0.05" /></label>
+            <label>Height <input id="selH" type="number" step="0.5" /></label>
+          </div>
+          <label>Color <input id="selColor" type="text" placeholder="#rrggbb or number" /></label>
+          <label>Description <textarea id="selDesc" rows="3" placeholder="What is this asset?"></textarea></label>
+          <div class="row">
+            <button id="applySelectionBtn" class="primary small">Update</button>
+            <button id="deleteSelectionBtn" class="danger small">Delete</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>BRUSH</h2>
+        <label>Road type
+          <select id="roadType">
+            <option value="paved">Paved</option>
+            <option value="gravel">Gravel</option>
+            <option value="dirt">Dirt</option>
+            <option value="boardwalk">Boardwalk</option>
+          </select>
+        </label>
+        <label>Road width <input id="roadWidth" type="range" min="4" max="30" step="1" value="12" /><output id="roadWidthOut">12</output></label>
+        <label>Tree scale <input id="treeScale" type="range" min="0.6" max="2.2" step="0.1" value="1" /><output id="treeScaleOut">1.0</output></label>
+      </section>
+
+      <section>
+        <h2>LAYERS</h2>
+        <label class="check"><input id="showRoads" type="checkbox" checked /> Roads</label>
+        <label class="check"><input id="showBuildings" type="checkbox" checked /> Buildings</label>
+        <label class="check"><input id="showLandmarks" type="checkbox" checked /> Landmarks</label>
+        <label class="check"><input id="showCustom" type="checkbox" checked /> Custom assets</label>
+        <label class="check"><input id="showElevation" type="checkbox" checked /> Elevation</label>
+      </section>
+
+      <section class="help">
+        <h2>HOW TO APPLY</h2>
+        <p><b>Apply to game</b> downloads <code>MapEdits.js</code>. Save it over <code>js/MapEdits.js</code>, then hard-refresh <code>index.html</code>. The editor can also write the file directly if your browser supports it. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
+        <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck.</p>
+        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees and elevation.</p>
+      </section>
+    </aside>
+  </main>
+
+  <footer id="statusbar">
+    <span id="coord">X — &nbsp; Z —</span>
+    <span id="zoomLabel">100%</span>
+    <span id="counts">0 roads · 0 assets</span>
+    <span id="message">Ready.</span>
+  </footer>
+
+  <div id="assetDialog" class="modal" hidden>
+    <div class="modalCard">
+      <h2>NEW ASSET</h2>
+      <p id="assetDialogType">Building</p>
+      <label>Name
+        <input id="assetName" type="text" />
+      </label>
+      <label>Description
+        <textarea id="assetDesc" rows="4" placeholder="Describe this asset (e.g. waterfront warehouse, pine tree, footbridge)"></textarea>
+      </label>
+      <div class="modalButtons">
+        <button id="assetCancelBtn">Cancel</button>
+        <button id="assetCreateBtn" class="primary">Create asset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="newMapDialog" class="modal" hidden>
+    <div class="modalCard">
+      <h2>NEW MAP</h2>
+      <p>Start a blank project. The map is centred on X0 / Z0.</p>
+      <label>Project name
+        <input id="newMapName" type="text" value="New Map" />
+      </label>
+      <div class="row">
+        <label>Width (world units)
+          <input id="newMapWidth" type="number" min="100" max="4000" step="50" value="860" />
+        </label>
+        <label>Height (world units)
+          <input id="newMapHeight" type="number" min="100" max="4000" step="50" value="740" />
+        </label>
+      </div>
+      <label class="check"><input id="newGameMode" type="checkbox" /> Standalone new game folder (not an edit of this game)</label>
+      <label id="gameNameRow" hidden>Game title
+        <input id="gameName" type="text" value="New Game" />
+      </label>
+      <p>You can also import roads, buildings and elevation from an OSM, GeoJSON or JSON file.</p>
+      <div class="modalButtons">
+        <button id="newMapImportBtn">Import data…</button>
+        <button id="newMapCancelBtn">Cancel</button>
+        <button id="newMapCreateBtn" class="primary">Create map</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/mapdata.js"></script>
+  <script src="js/MapEdits.js"></script>
+  <script src="js/imagemap.js"></script>
+  <script src="js/MapEditor.js"></script>
+</body>
+</html>

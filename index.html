@@ -8,15 +8,60 @@
 </head>
 <body>
   <div id="game"></div>
+  <div id="loading" class="loading">Loading map…</div>
+  <video id="loadingVideo" class="loadingVideo hidden" playsinline loop preload="auto"></video>
+  <audio id="loadingAudio" preload="auto"></audio>
+
+  <div id="splash" class="splash">
+    <div class="splashKicker splashTitleTop">A COASTAL DRIVING PLAYGROUND</div>
+    <h1 class="splashTitle">The <span>Harbor</span></h1>
+    <div id="splashStartArea" class="splashStartArea splashStartOverlay">
+      <button id="startBtn" class="startBtn" disabled>START</button>
+      <div class="splashKeys"><b>Enter</b> / <b>Gamepad X</b> / click START</div>
+    </div>
+    <div id="splashStatus" class="splashStatus splashLoading splashStatusBottom"><span class="splashSpinner" aria-hidden="true"></span><span id="splashStatusText">Loading</span></div>
+  </div>
+
+  <audio id="introMusic" src="media/base_211.m4a" preload="auto" loop></audio>
+
 
   <div id="hud">
-    <div id="challengePanel" class="panel">
-      <div class="panelHead">TIME TRIALS <span class="dim">glowing gates</span></div>
-      <div id="challengeBody"></div>
+    <div id="fpvOverlay" class="fpvOverlay hidden">
+      <canvas id="fpvHud" width="1280" height="720"></canvas>
+      <div class="fpvVignette"></div>
+      <div class="fpvTop">
+        <div id="fpvCoords" class="fpvCoords">LAT 00.0000&nbsp;&nbsp;LON 00.0000</div>
+        <div class="fpvHome">
+          <span id="fpvHomeArrow">▲</span>
+          <span id="fpvHomeLabel">HOME 000°</span>
+        </div>
+      </div>
+      <div class="fpvLeft">
+        <div class="fpvStat">
+          <svg class="fpvDish" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 4c7 0 13 4 16 10l-4 2C13 12 9 8 3 8z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M12 14l5 6M14 19h6M6 20h12" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="17" cy="9" r="1.5" fill="currentColor"/>
+          </svg>
+          <span id="fpvSats">12 SAT</span>
+        </div>
+        <div class="fpvStat"><span class="fpvKey">ALT</span><span id="fpvAlt">0 m</span></div>
+        <div class="fpvStat"><span class="fpvKey">SPD</span><span id="fpvSpd">0 km/h</span></div>
+      </div>
+      <div class="fpvBottom">
+        <div id="fpvName" class="fpvName">NIGHT WASP</div>
+        <div class="fpvBottomRow">
+          <span id="fpvBattery">100%</span>
+          <span id="fpvMode">FLIGHT MODE ACRO</span>
+        </div>
+      </div>
+      <div id="fpvMessage" class="fpvMessage"></div>
     </div>
 
-    <div id="vehiclePanel" class="panel">
-      <div class="panelHead">VEHICLE <span class="dim">keys 1–5</span></div>
+
+
+    <div id="vehiclePanel" class="panel hidden">
+      <div class="panelHead">VEHICLE <span class="dim">keys 1–9, 0</span></div>
       <div id="vehicleName">Motorcycle</div>
       <div id="vehicleDesc" class="dim"></div>
       <div class="vehList">
@@ -25,6 +70,19 @@
         <button class="vehBtn" data-key="cart"><b>3</b> Cart</button>
         <button class="vehBtn" data-key="car"><b>4</b> Car</button>
         <button class="vehBtn" data-key="truck"><b>5</b> Truck</button>
+        <button class="vehBtn" data-key="pedestrian"><b>6</b> On Foot</button>
+        <button class="vehBtn" data-key="boat"><b>7</b> Boat</button>
+        <button class="vehBtn" data-key="plane"><b>8</b> Plane</button>
+        <button class="vehBtn" data-key="helicopter"><b>9</b> Heli</button>
+        <button class="vehBtn" data-key="fpv"><b>0</b> FPV</button>
+        <button class="vehBtn" data-key="jetpack"><b>J</b> Jetpack</button>
+        <button class="vehBtn" data-key="coupe"><b>C</b> Coupe</button>
+        <button class="vehBtn" data-key="muscleCar"><b>M</b> Muscle</button>
+        <button class="vehBtn" data-key="taxi"><b>X</b> Taxi</button>
+        <button class="vehBtn" data-key="limo"><b>L</b> Limo</button>
+        <button class="vehBtn" data-key="bus"><b>U</b> Bus</button>
+        <button class="vehBtn" data-key="offroad"><b>O</b> 4x4</button>
+        <button class="vehBtn" data-key="compact"><b>H</b> Compact</button>
       </div>
       <div class="smallRow"><span id="surface">Paved</span><span id="camMode">Chase</span></div>
     </div>
@@ -34,8 +92,9 @@
     </div>
 
     <div id="minimapWrap" class="panel">
-      <div class="panelHead">MAP <span class="dim">M to hide</span></div>
+      <div class="panelHead">MAP <span class="dim">M to enlarge</span></div>
       <canvas id="minimap" width="200" height="200"></canvas>
+      <div id="navInfo" class="navInfo hidden"></div>
     </div>
 
     <div id="help" class="panel hidden">
@@ -44,25 +103,164 @@
         <span>W / ↑</span><span>Accelerate</span>
         <span>S / ↓</span><span>Brake / reverse</span>
         <span>A D / ← →</span><span>Steer</span>
-        <span>Space</span><span>Handbrake / drift</span>
-        <span>Shift</span><span>Boost</span>
+        <span>Space</span><span>Handbrake / swim down / aircraft descend</span>
+        <span>Shift</span><span>Boost / sprint on foot (stamina bar) / aircraft climb</span>
         <span>C</span><span>Camera: chase / hood / orbit</span>
         <span>R</span><span>Reset / flip vehicle</span>
-        <span>1 – 5</span><span>Switch vehicle</span>
-        <span>M</span><span>Toggle minimap</span>
+        <span>E</span><span>Exit or enter vehicles, steal any nearby car/bus/cruiser/boat/aircraft, enter venues, rob a downed pedestrian, use a safe house</span>
+        <span>X</span><span>Horn / pick up companions, or beat up a pedestrian on foot</span>
+        <span>1 – 9</span><span>Switch vehicle, go on foot, or board the boat</span>
+        <span>0 / J</span><span>Board / leave FPV quad, or equip jetpack</span>
+        <span>FPV: W/S</span><span>Pitch forward / back</span>
+        <span>FPV: A/D</span><span>Roll left / right</span>
+        <span>FPV: Q/Z</span><span>Yaw left / right</span>
+        <span>FPV: Shift/Space</span><span>Climb / descend — land on the pad to swap the battery</span>
+        <span>Esc / E</span><span>Leave FPV goggles</span>
+        <span>U</span><span>Board the city bus</span>
+        <span>N</span><span>Music on / off</span>
+        <span>B</span><span>Next radio station</span>
+        <span>P</span><span>Settings: sound levels, full screen &amp; keyboard/gamepad map</span>
+        <span>Q / Esc</span><span>Return to main menu</span>
+        <span>Q / Esc</span><span>Return to main menu</span>
+        <span>V</span><span>Change weather</span>
+        <span>M / G</span><span>Travel-up round minimap / full map; G spawns you on foot at the chosen waypoint</span>
+        <span class="helpHead">GAMEPAD</span><span class="helpHead">standard mapping</span>
+        <span>Left stick</span><span>Steer / walk; aircraft yaw + lift or plane throttle</span>
+        <span>Right stick</span><span>Look around on land; aircraft roll / pitch</span>
+        <span>Aircraft</span><span>Left Y centre hovers; plane left Y is throttle; right stick flies pitch &amp; roll</span>
+        <span>RT / LT</span><span>Accelerate / brake &amp; reverse</span>
+        <span>A / B</span><span>Handbrake / swim down / descend, or boost / climb fallback</span>
+        <span>X / Y</span><span>Change camera / reset</span>
+        <span>LB / RB</span><span>Previous / next vehicle</span>
+        <span>D-pad ↑ / ↓</span><span>Next radio station / horn &amp; pickups</span>
+        <span>L3 / R3</span><span>Music on/off / exit or enter vehicles, steal a nearby vehicle, use a safe house</span>
+        <span>Start / Back</span><span>Controls or spawn on foot at the waypoint / full waypoint map</span>
       </div>
-      <div class="helpNote">Drive through the first glowing gate of a time trial to start it. Hit every gate in order to set a best time (saved locally).</div>
+      <div class="helpNote">Explore the coast at your own pace. Hitting pedestrians or police cars, or stealing any nearby vehicle, starts a chase and earns wanted stars. More stars send more cruisers; four stars bring police helicopters. Cruisers can only ram your car; cops arrest you only after you bail out, and you can mash <b>A/D</b> or <b>W/S</b> to resist for a few seconds. Stay out of sight for three minutes to lose the heat, or duck into a teal-marked <b>safe house</b>. Roving gangs rob people and steal cars; the air-defense battery near the river shoots down hostile drones. The first few crashes only damage the car; later impacts make it smoke heavily, catch fire and explode — only that explosion can waste you. Press <b>R</b> to reset or <b>E</b> to bail out. Stop at a restaurant pickup window to start a <b>food delivery</b> gig, follow the GPS marker to the numbered home, then stop at the porch to hand the order to the resident and collect the fare. Teen motorcycle crews tear donuts through parks and lawns by day; after dark they burglarize homes and steal cars, and cruisers chase them until they are caught. Press <b>Q</b> or <b>Esc</b> from gameplay to return to the main menu.</div>
     </div>
 
+    <div id="settings" class="panel hidden">
+      <div class="panelHead">SETTINGS &amp; WORLD <span class="dim">P to close</span></div>
+      <div class="settingRow"><label for="masterVol">Master sound</label><input id="masterVol" type="range" min="0" max="100" value="85"><span id="masterVal" class="settingValue">85%</span></div>
+      <div class="settingRow"><label for="musicVol">Music level</label><input id="musicVol" type="range" min="0" max="100" value="70"><span id="musicVal" class="settingValue">70%</span></div>
+      <div class="settingRow"><label for="sfxVol">Game sounds / effects</label><input id="sfxVol" type="range" min="0" max="100" value="85"><span id="sfxVal" class="settingValue">85%</span></div>
+      <div class="settingRow"><span>Station</span><button id="stationBtn" class="settingBtn" disabled>📻 COASTAL FM</button></div>
+
+      <div class="settingRow"><span>Weather</span><button id="weatherBtn" class="settingBtn">CLEAR</button></div>
+      <div class="settingRow"><label for="timeSlider">Time of day</label><input id="timeSlider" type="range" min="0" max="100" value="34"><span id="timeVal" class="settingValue">08:09</span></div>
+      <div class="settingRow"><span>Display</span><button id="fullscreenBtn" class="settingBtn">⛶ FULL SCREEN</button></div>
+      <!-- Full screen on start removed: automatic fullscreen can interrupt startup flow -->
+      <div class="settingsControls">
+        <div class="panelHead">KEYBOARD &amp; GAMEPAD <span class="dim">H for full help</span></div>
+        <div class="helpGrid">
+          <span>W / S</span><span>Accelerate / brake &amp; reverse</span>
+          <span>A / D</span><span>Steer left / right</span>
+          <span>Space</span><span>Handbrake / swim down / aircraft descend</span>
+          <span>Shift</span><span>Boost / sprint on foot (stamina bar) / aircraft climb</span>
+          <span>C / R</span><span>Camera / reset vehicle</span>
+          <span>E</span><span>Exit &amp; re-enter, venues, cars, safe houses</span>
+          <span>X</span><span>Horn / pickups / beat up pedestrian</span>
+          <span>1–9, U, 0, J</span><span>Vehicles, bus, FPV quad, jetpack</span>
+          <span>N / B</span><span>Music toggle / next station</span>
+          <span>P / M / G / V</span><span>Settings / map / waypoint spawn / weather</span>
+          <span>Tab / F / H</span><span>Mode toggle / full controls help</span>
+          <span>Q / Esc</span><span>Return to main menu</span>
+          <span class="helpHead">GAMEPAD</span><span class="helpHead">standard mapping</span>
+          <span>Left stick</span><span>Steer / walk</span>
+          <span>RT / LT</span><span>Accelerate / brake &amp; reverse</span>
+          <span>A / B</span><span>Handbrake / descend, or boost / climb</span>
+          <span>X / Y</span><span>Camera / reset</span>
+          <span>LB / RB</span><span>Previous / next vehicle</span>
+          <span>D-pad ↑ / ↓</span><span>Next station / horn</span>
+          <span>L3 / R3</span><span>Music / exit or enter vehicles and steal vehicles</span>
+          <span>Start / Back</span><span>Settings or waypoint spawn / full-screen map</span>
+        </div>
+      </div>
+      <div class="settingsNote">Press <b>P</b> or the <b>⚙ SETTINGS</b> button any time. Use <b>⛶ FULL SCREEN</b> to fill the display, or check <b>Full screen on start</b> to remember that choice. <b>Q</b> or <b>Esc</b> returns to the main menu. Station files are optional — edit <b>js/radiodata.js</b> to point a station at your own audio files. The radio goes quiet in pedestrian mode and resumes when you get back into a vehicle.</div>
+      <div class="modeRow"><button id="menuBtn" class="settingsClose" type="button">Main Menu</button><button id="settingsClose" class="settingsClose" type="button">Close</button></div>
+    </div>
+
+    <div id="audioBar" class="audioBar">
+      <button id="vehiclesBtn" class="musicBtn">🚙 VEHICLES</button>
+      <button id="settingsBtn" class="musicBtn">⚙ SETTINGS</button>
+      <button id="radioBtn" class="musicBtn">📻 COASTAL FM</button>
+      <button id="musicBtn" class="musicBtn">♪ MUSIC: ON</button>
+    </div>
+    <div id="worldStatus" class="worldStatus">☀ 08:09 • CLEAR</div>
+    <div id="padStatus" class="padStatus">GAMEPAD: connect a controller</div>
+    <div id="wantedBadge" class="wantedBadge"></div>
+    <div id="safeHouseOverlay" class="safeHouseOverlay">
+      <div class="safeTitle">SAFE HOUSE</div>
+      <div class="safeSub"><b id="safeHouseName">SAFE HOUSE</b> — you're off the street</div>
+      <div class="safeSub">Press <b>E</b> / gamepad <b>R3</b> to leave</div>
+    </div>
+    <div id="privateFade" class="privateFade"></div>
+    <div id="bigMessage" class="bigMessage"></div>
+    <div id="actionHint" class="actionHint"></div>
+    <div id="arrestOverlay" class="arrestOverlay">
+      <div class="arrestTitle">RESIST ARREST</div>
+      <div class="arrestHelp">Mash <b>A / D</b> or <b>W / S</b> — gamepad stick works too</div>
+      <div class="arrestBar"><i id="arrestProgressBar"></i></div>
+      <div class="arrestTimer"><span id="arrestTimeLeft">0.0s</span> until booking</div>
+    </div>
     <div id="toast"></div>
-    <div id="hint">Click or press a key to enable engine audio</div>
+    <div id="hint">Click, press a key or press a gamepad button to enable audio</div>
   </div>
 
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <div id="mapOverlay" class="mapOverlay hidden">
+    <div class="mapDialog">
+      <div class="mapHead">
+        <div><b>COASTAL CRUISE MAP</b><span class="dim">North-up live playable map · whole town · D-pad/arrows move crosshairs</span></div>
+        <button id="mapCloseBtn" class="mapBtn">✕ CLOSE (M)</button>
+      </div>
+      <canvas id="fullMap" width="1200" height="1033"></canvas>
+      <div class="mapFoot">
+        <span id="mapHint" class="dim">D-pad/arrows move crosshairs · right stick selects buttons · A/Enter activates</span>
+        <div class="mapFootBtns">
+          <button id="mapSetRoadBtn" class="mapBtn" data-map-action="setRoad">SET WAYPOINT ROADS</button>
+          <button id="mapSetStraightBtn" class="mapBtn" data-map-action="setStraight">SET WAYPOINT STRAIGHT</button>
+          <button id="mapNavigateBtn" class="mapBtn" data-map-action="navigate">NAVIGATE</button>
+          <button id="mapTeleportBtn" class="mapBtn" data-map-action="teleport">TELEPORT</button>
+          <button id="mapClearBtn" class="mapBtn" data-map-action="clear">CLEAR WAYPOINT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/GLTFLoader.js"></script>
   <script src="js/config.js"></script>
+  <script src="js/DrawbridgeSystem.js"></script>
+  <script src="js/mapdata.js"></script>
+  <script src="js/MapEdits.js"></script>
+  <script src="js/MapEditsRuntime.js"></script>
+  <script src="js/imagemap.js"></script>
+  <script src="js/TextureGenerator.js"></script>
+  <script src="js/RetroWater.js"></script>
+  <script src="js/LightingSystem.js"></script>
+  <script src="js/EnvironmentManager.js"></script>
+  <script src="js/GeneratedAssets.js"></script>
+  <script src="js/DownloadedAssets.js"></script>
+  <script src="js/FarmBuildingsData.js"></script>
+  <script src="js/AnimalAssets.js"></script>
+  <script src="js/FishAssets.js"></script>
+  <script src="js/AssetLoader.js"></script>
+  <script src="js/AnimalSystem.js"></script>
+  <script src="js/FishSystem.js"></script>
   <script src="js/world.js"></script>
+  <script src="js/details.js"></script>
+  <script src="js/StaticBatcher.js"></script>
   <script src="js/vehicles.js"></script>
+  <script src="js/DownloadedCharacterLoader.js"></script>
   <script src="js/npcs.js"></script>
+  <script src="js/UfoSystem.js"></script>
+  <script src="js/TeenGangSystem.js"></script>
+  <script src="js/InteriorSystem.js"></script>
+  <script src="js/CrimeSystem.js"></script>
+  <script src="js/DeliverySystem.js"></script>
+  <script src="js/radiodata.js"></script>
+  <script src="js/gamepad.js"></script>
+  <script src="js/weather.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 450">
+  <defs>
+    <filter id="fade"><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.45 0"/></filter>
+  </defs>
+  <rect width="750" height="450" fill="#ffffff"/>
+  <rect width="300" height="450" fill="#002868"/>
+  <rect x="300" y="0" width="450" height="225" fill="#bf0a30"/>
+  <rect x="300" y="225" width="450" height="225" fill="#ffffff"/>
+  <rect x="294" y="0" width="12" height="450" fill="#ffca00"/>
+  <g transform="translate(150,225)">
+    <circle r="92" fill="none" stroke="#ffca00" stroke-width="8"/>
+    <circle r="84" fill="#002868" stroke="#ffffff" stroke-width="4"/>
+    <g fill="#ffffff">
+      <polygon points="0,-56 12,-18 52,-18 20,6 32,44 0,20 -32,44 -20,6 -52,-18 -12,-18"/>
+    </g>
+    <g fill="#ffca00" font-family="Georgia, serif" font-size="22" font-weight="700" text-anchor="middle">
+      <text y="-62">MAY 20TH 1775</text>
+      <text y="78">APRIL 12TH 1776</text>
+    </g>
+    <g fill="#ffffff" font-family="Georgia, serif" font-size="52" font-weight="700" text-anchor="middle">
+      <text x="-24" y="18">N</text>
+      <text x="24" y="18">C</text>
+      <text x="0" y="18" font-size="44">*</text>
+    </g>
+  </g>
+</svg>

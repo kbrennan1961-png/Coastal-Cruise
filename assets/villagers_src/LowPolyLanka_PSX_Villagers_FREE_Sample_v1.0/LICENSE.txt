@@ -1,0 +1,13 @@
+LowPoly Lanka Asset License
+
+You may use these assets in unlimited personal and commercial projects,
+such as games, films, renders and other finished works.
+You may modify them for use in your projects.
+Credit to "LowPoly Lanka" is appreciated but not required.
+
+You may not:
+- resell, share or redistribute the assets themselves, alone or as part of
+  another asset pack, whether modified or not
+- use the assets to train AI or machine-learning models
+
+The assets are provided "as is", without warranty of any kind.

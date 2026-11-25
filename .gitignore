@@ -1,0 +1,6 @@
+node_modules/
+capture/
+*.webm
+*.mp4
+.DS_Store
+.tmp-*
