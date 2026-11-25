@@ -76,11 +76,22 @@ JSON patch shape:
 /Applications/Blender.app/Contents/MacOS/Blender -b scene.blend \
   --python tools/blender_map_export.py -- layout.json
 
-# MapEdits.js or JSON -> Blender proxy objects
+# MapEdits.js or JSON -> Blender scene with real baked meshes
 /Applications/Blender.app/Contents/MacOS/Blender -b \
   --python tools/blender_map_import.py -- js/MapEdits.js --clear \
   --save /tmp/coastal-map.blend
+
+# Lightweight tagged empties/cones instead of baked meshes
+/Applications/Blender.app/Contents/MacOS/Blender -b \
+  --python tools/blender_map_import.py -- js/MapEdits.js --clear --proxies \
+  --save /tmp/coastal-map-proxies.blend
 ```
+
+The importer reads the model geometry embedded in `GeneratedAssets.js` and
+`DownloadedAssets.js`, so cars, houses, pines and downloaded rocks appear as
+visible meshes in Blender. Each placement gets a tagged parent empty; the
+child `part_*` meshes are display-only, so exporting again produces the same
+patch rather than duplicating assets.
 
 Set `cc_type` on objects to `road`, `building`, `bridge`, `tree`, `model`, or
 `elevation`. For `model`, set `cc_model_key` to a baked model name (for example
@@ -129,11 +140,23 @@ built-in synth radio; copy them over yourself if you want file-backed stations.
 
 ## Trailer capture
 
-A scripted Playwright harness can record a clean, HUD-free gameplay trailer:
+A scripted Playwright harness can record a clean, HUD-free gameplay trailer.
+Run it from the repository root — on the mini PC that is the bridge clone,
+not your home directory:
 
 ```bash
+cd ~/git/Coastal-Cruise-bridge   # mini PC; on this Mac: cd ~/coastal-cruise
+npm ci                           # one time, installs Playwright + ffmpeg-static
 npm run trailer
 ```
+
+`npm run` looks for `package.json` in the current directory. Running it from
+`/home/kb` produces `ENOENT: no such file or directory, open '/home/kb/package.json'`.
+If Playwright reports a missing Chromium build, run
+`npx playwright install chromium` once from the same folder. On Ubuntu 26.04
+that installer is not supported yet; use an already-cached Chrome for Testing
+build instead, for example
+`--chromium ~/.cache/ms-playwright/chromium-1254/chrome-linux64/chrome`.
 
 It opens the game from `file://`, drives a coupe along Main Street, follows a
 pedestrian on the boardwalk, flies a jetpack over the harbor, then finishes with

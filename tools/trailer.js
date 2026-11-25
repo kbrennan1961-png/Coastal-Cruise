@@ -46,6 +46,7 @@ Options:
   --bitrate N        WebM video bitrate (default: 8000000)
   --units N          Timeline scale; 0.1 is useful for smoke tests
   --keep-raw         Keep the intermediate WebM after MP4 muxing
+  --chromium PATH     Use a specific Chromium binary (or set CC_CHROMIUM_PATH)
   --debug            Print browser console messages
   --help             Show this text
 
@@ -70,6 +71,7 @@ async function main() {
     bitrate: number('--bitrate', 8000000),
     units: number('--units', 1),
     keepRaw: has('--keep-raw'),
+    chromium: process.env.CC_CHROMIUM_PATH || value('--chromium', null),
     debug: has('--debug')
   };
 
@@ -81,7 +83,7 @@ async function main() {
   console.log(`Trailer: ${opts.url}`);
   console.log(`Capture: ${opts.width}x${opts.height} @ ${opts.fps} fps`);
 
-  const browser = await chromium.launch({
+  const browser = await chromium.launch(Object.assign({
     headless: true,
     args: [
       '--enable-unsafe-swiftshader',
@@ -89,7 +91,7 @@ async function main() {
       '--use-angle=swiftshader',
       '--autoplay-policy=no-user-gesture-required'
     ]
-  });
+  }, opts.chromium ? { executablePath: resolvePath(opts.chromium) } : {}));
 
   try {
     const context = await browser.newContext({

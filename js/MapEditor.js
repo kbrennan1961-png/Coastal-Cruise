@@ -203,6 +203,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!state.didFit) fitView();
     render();
+    if (CC.MapPreview3D) CC.MapPreview3D.resize();
   }
 
   /* ---------- drawing ---------- */
@@ -500,6 +501,7 @@
     drawSelection();
     drawCursor();
     updateCounts();
+    if (CC.MapPreview3D && CC.MapPreview3D.active) CC.MapPreview3D.refresh();
   }
 
   /* ---------- hit testing ---------- */
@@ -829,6 +831,33 @@
     $('toolHint').textContent = HINTS[tool] || '';
     canvas.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
     render();
+  }
+
+  let previewMode = false;
+  function setPreviewMode(on) {
+    const p = CC.MapPreview3D;
+    if (on && (!p || !p.available)) {
+      setMessage(p && p.hintText ? '3D preview unavailable in this browser.' : '3D preview script did not load.');
+      return;
+    }
+    previewMode = !!on;
+    $('canvasWrap').classList.toggle('preview', previewMode);
+    $('mapCanvas').hidden = previewMode;
+    $('previewWrap').hidden = !previewMode;
+    $('view2DBtn').classList.toggle('on', !previewMode);
+    $('preview3DBtn').classList.toggle('on', previewMode);
+    $('previewFitBtn').hidden = !previewMode;
+    if (p) {
+      p.setActive(previewMode);
+      if (previewMode) p.resize();
+    }
+    if (previewMode) {
+      $('toolHint').textContent = p ? p.hintText : '';
+      setMessage('3D preview active — press P for the 2D editor.');
+    } else {
+      setTool(state.tool);
+      setMessage('2D editor active.');
+    }
   }
 
   /* ---------- export / import ---------- */
@@ -1776,7 +1805,11 @@
       return;
     }
     const tag = (e.target && e.target.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'button') return;
+    const typing = tag === 'input' || tag === 'select' || tag === 'textarea';
+    if (!typing && e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault(); setPreviewMode(!previewMode); return;
+    }
+    if (typing || tag === 'button') return;
     if (e.code === 'Space') { state.spaceDown = true; canvas.style.cursor = 'grab'; e.preventDefault(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -1790,10 +1823,17 @@
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(); return; }
     if (e.key === '+' || e.key === '=') { zoomAt(1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); return; }
     if (e.key === '-') { zoomAt(1 / 1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); return; }
-    if (e.key === '0') { fitView(); render(); return; }
+    if (e.key === '0') {
+      if (previewMode && CC.MapPreview3D) CC.MapPreview3D.focus();
+      else { fitView(); render(); }
+      return;
+    }
     const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', m: 'model', x: 'assetErase', h: 'pan' };
     const k = e.key.toLowerCase();
-    if (shortcuts[k]) setTool(shortcuts[k]);
+    if (shortcuts[k]) {
+      if (previewMode) setPreviewMode(false);
+      setTool(shortcuts[k]);
+    }
   });
 
   window.addEventListener('keyup', function (e) {
@@ -1816,6 +1856,11 @@
   $('zoomInBtn').addEventListener('click', function () { zoomAt(1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); });
   $('zoomOutBtn').addEventListener('click', function () { zoomAt(1 / 1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); });
   $('zoomFitBtn').addEventListener('click', function () { fitView(); render(); });
+  $('view2DBtn').addEventListener('click', function () { setPreviewMode(false); });
+  $('preview3DBtn').addEventListener('click', function () { setPreviewMode(true); });
+  $('previewFitBtn').addEventListener('click', function () {
+    if (CC.MapPreview3D) CC.MapPreview3D.focus();
+  });
   $('roadWidth').addEventListener('input', function () { $('roadWidthOut').textContent = $('roadWidth').value; render(); });
   $('treeScale').addEventListener('input', function () { $('treeScaleOut').textContent = Number($('treeScale').value).toFixed(1); });
   $('modelScale').addEventListener('input', function () { $('modelScaleOut').textContent = Number($('modelScale').value).toFixed(2); });
@@ -1882,6 +1927,7 @@
   fillModelSelect($('selModel'), MODEL_KEYS[0]);
   initData();
   buildTerrain();
+  if (CC.MapPreview3D) CC.MapPreview3D.init($('previewWrap'), null, function () { return state; });
   resize();
   fitView();
   if (currentPatch()) setMessage('Editing the patch in js/MapEdits.js.');

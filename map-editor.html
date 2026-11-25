@@ -28,6 +28,11 @@
       <button id="zoomOutBtn" title="Zoom out (-)">－</button>
       <button id="zoomFitBtn" title="Fit whole map (0)">⤢</button>
     </div>
+    <div class="toolgroup" id="viewTools">
+      <button id="view2DBtn" class="toggle on" title="2D layout view">▦ <span>2D</span></button>
+      <button id="preview3DBtn" class="toggle" title="3D preview (P)">◱ <span>3D preview</span></button>
+      <button id="previewFitBtn" title="Fit 3D view" hidden>⤢ <span>Fit 3D</span></button>
+    </div>
     <div class="toolgroup right">
       <button id="newGameBtn" title="Start a standalone game in a new folder">🏗 <span>New game</span></button>
       <button id="newMapBtn" title="Start a blank map project">✚ <span>New map</span></button>
@@ -45,6 +50,7 @@
   <main>
     <div id="canvasWrap">
       <canvas id="mapCanvas"></canvas>
+      <div id="previewWrap" hidden></div>
       <div id="toolHint">Select: click an asset or road point, then drag to move it.</div>
       <div id="draftHint" hidden></div>
     </div>
@@ -108,7 +114,8 @@
         <h2>HOW TO APPLY</h2>
         <p><b>Apply to game</b> downloads <code>MapEdits.js</code>. Save it over <code>js/MapEdits.js</code>, then hard-refresh <code>index.html</code>. The editor can also write the file directly if your browser supports it. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
         <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck.</p>
-        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models and elevation. Blender can export that JSON with <code>tools/blender_map_export.py</code>.</p>
+        <p><b>3D preview</b> (<b>P</b>) renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. It is a view only — switch back to 2D to edit.</p>
+        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models and elevation. Blender can export that JSON with <code>tools/blender_map_export.py</code>, and import it back as 3D proxies or real baked meshes with <code>tools/blender_map_import.py</code>.</p>
       </section>
     </aside>
   </main>
@@ -176,6 +183,7 @@
   <script src="js/DownloadedAssets.js"></script>
   <script src="js/AssetLoader.js"></script>
   <script src="js/imagemap.js"></script>
+  <script src="js/MapPreview3D.js"></script>
   <script src="js/MapEditor.js"></script>
 </body>
 </html>

@@ -76,6 +76,15 @@ main { display: flex; height: calc(100% - 52px - 28px); }
 #mapCanvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 #mapCanvas.panning { cursor: grabbing; }
 
+#previewWrap {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(#74bce6, #c8d9d0 70%, #8fa56c);
+}
+#previewWrap canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#previewWrap canvas:active { cursor: grabbing; }
+#canvasWrap.preview #mapCanvas { display: none; }
+
 #toolHint, #draftHint {
   position: absolute;
   left: 12px;
