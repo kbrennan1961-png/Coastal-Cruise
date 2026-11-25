@@ -18,6 +18,17 @@ python3 -m http.server 8080
 
 Then visit <http://localhost:8080>. Either way is completely offline.
 
+## Deployment
+
+The live game is hosted on **Netlify**, connected to
+`kbrennan1961-png/Coastal-Cruise` on GitHub. Pushes to `main` trigger an
+automatic rebuild and redeploy. The site is fully static; no runtime server or
+backend is required.
+
+The radio MP3s in `audio/` are compressed to under 25 MB each. The repo uses
+Git LFS for `*.mp3`, so GitHub stores small pointer files and LFS-aware builds
+fetch the real audio. See `audio/README.md` for bitrates and filenames.
+
 ## Map editor
 
 Open **`map-editor.html`** directly (no server needed). It shows the live road
