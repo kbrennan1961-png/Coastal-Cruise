@@ -29,6 +29,32 @@ The radio MP3s in `audio/` are compressed to under 25 MB each. The repo uses
 Git LFS for `*.mp3`, so GitHub stores small pointer files and LFS-aware builds
 fetch the real audio. See `audio/README.md` for bitrates and filenames.
 
+## Blender 3.6 asset workflow
+
+Blender **3.6** is the version used for the baked CC0 models. The export scripts
+in `tools/` run headlessly, for example:
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b \
+  --python tools/export-vehicles.py -- <source-dir> <output-dir>
+```
+
+The other scripts are `export-extra-vehicles.py`, `export-trailer-park.py` and
+`export-bus-stop.py`. They import FBX, clean up materials and axes, and write
+GLB files for `tools/import-assets.js`, which bakes them into
+`js/GeneratedAssets.js`.
+
+Typical loop:
+
+1. Author or edit the model in Blender 3.6 and save FBX/GLB.
+2. Run the matching `tools/export-*.py` script with Blender 3.6.
+3. Run `node tools/import-assets.js ...` to regenerate the baked JS bundle.
+4. Hard-refresh `index.html` and verify in-game.
+
+Keep textures small and retain the flat-shaded PS2 look. For map layout work,
+Blender can export the map editor's native JSON patch shape; the editor currently
+places primitive `building`, `bridge` and `tree` assets.
+
 ## Map editor
 
 Open **`map-editor.html`** directly (no server needed). It shows the live road
