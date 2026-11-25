@@ -16,6 +16,7 @@
       <button class="tool" data-tool="building" title="Drag to place a building (R)">▭ <span>Building</span></button>
       <button class="tool" data-tool="bridge" title="Drag to place a bridge + road (G)">≋ <span>Bridge</span></button>
       <button class="tool" data-tool="tree" title="Place a tree (T)">♣ <span>Tree</span></button>
+      <button class="tool" data-tool="model" title="Place a baked Blender/baked model (M)">◈ <span>Model</span></button>
       <button class="tool" data-tool="assetErase" title="Erase an asset (X)">✕ <span>Erase asset</span></button>
       <button class="tool" data-tool="pan" title="Pan the map (H)">✥ <span>Pan</span></button>
     </div>
@@ -54,6 +55,8 @@
         <div id="selectionEmpty" class="empty">Nothing selected.</div>
         <div id="selectionForm" hidden>
           <label>Type <input id="selType" disabled /></label>
+          <label id="selModelRow" hidden>Model <select id="selModel"></select></label>
+          <label id="selScaleRow" hidden>Scale <input id="selScale" type="number" step="0.05" min="0.1" /></label>
           <label>Name <input id="selName" /></label>
           <div class="row">
             <label>X <input id="selX" type="number" step="1" /></label>
@@ -88,6 +91,8 @@
         </label>
         <label>Road width <input id="roadWidth" type="range" min="4" max="30" step="1" value="12" /><output id="roadWidthOut">12</output></label>
         <label>Tree scale <input id="treeScale" type="range" min="0.6" max="2.2" step="0.1" value="1" /><output id="treeScaleOut">1.0</output></label>
+        <label>Model <select id="modelKey"></select></label>
+        <label>Model scale <input id="modelScale" type="range" min="0.25" max="4" step="0.05" value="1" /><output id="modelScaleOut">1.00</output></label>
       </section>
 
       <section>
@@ -103,7 +108,7 @@
         <h2>HOW TO APPLY</h2>
         <p><b>Apply to game</b> downloads <code>MapEdits.js</code>. Save it over <code>js/MapEdits.js</code>, then hard-refresh <code>index.html</code>. The editor can also write the file directly if your browser supports it. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
         <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck.</p>
-        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees and elevation.</p>
+        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models and elevation. Blender can export that JSON with <code>tools/blender_map_export.py</code>.</p>
       </section>
     </aside>
   </main>
@@ -121,6 +126,9 @@
       <p id="assetDialogType">Building</p>
       <label>Name
         <input id="assetName" type="text" />
+      </label>
+      <label id="assetModelRow" hidden>Model
+        <select id="assetModel"></select>
       </label>
       <label>Description
         <textarea id="assetDesc" rows="4" placeholder="Describe this asset (e.g. waterfront warehouse, pine tree, footbridge)"></textarea>
@@ -160,9 +168,13 @@
     </div>
   </div>
 
+  <script src="js/vendor/three.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/mapdata.js"></script>
   <script src="js/MapEdits.js"></script>
+  <script src="js/GeneratedAssets.js"></script>
+  <script src="js/DownloadedAssets.js"></script>
+  <script src="js/AssetLoader.js"></script>
   <script src="js/imagemap.js"></script>
   <script src="js/MapEditor.js"></script>
 </body>

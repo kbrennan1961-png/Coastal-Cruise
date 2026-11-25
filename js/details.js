@@ -1166,7 +1166,8 @@
       ['BEACH DAYS', 'SUN • SAND • SURF', '#c08a2e'],
 
     ];
-    const paved = CC.roadDefs.filter(function (r) { return r.type === 'paved'; });
+    const paved = CC.roadDefs.filter(function (r) { return r.type === 'paved' && r._length > 4; });
+    if (!paved.length) return;
     adLoop:
     for (let i = 0; i < ads.length; i++) {
       for (let tries = 0; tries < 18; tries++) {

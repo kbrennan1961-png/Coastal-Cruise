@@ -18,8 +18,61 @@
     bridge: 'Bridge: drag across the water; adds a road plus a bridge deck.',
     tree: 'Tree: click to place one at the current brush scale.',
     assetErase: 'Erase asset: click a building, landmark or custom asset to remove it.',
+    model: 'Model: click to place a baked Blender/baked model from the brush list.',
     pan: 'Pan: drag the map. Middle mouse or Space+drag also pans.'
   };
+
+  const MODEL_RECORDS = (CC.AssetLoader && CC.AssetLoader.models) || {};
+  const MODEL_KEYS = Object.keys(MODEL_RECORDS).sort();
+
+  function modelLabel(key) {
+    return String(key)
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+      .replace(/([a-z])(\d)/g, '$1 $2')
+      .replace(/^./, function (c) { return c.toUpperCase(); });
+  }
+
+  function modelGroup(key) {
+    const m = MODEL_RECORDS[key] || {};
+    if (m.kind === 'downloadedRock') return 'Rocks';
+    if (m.kind) return modelLabel(m.kind) + 's';
+    if (m.wheels) return 'Vehicles';
+    return 'Baked scenery';
+  }
+
+  function fillModelSelect(select, selected) {
+    if (!select) return;
+    select.textContent = '';
+    const groups = new Map();
+    MODEL_KEYS.forEach(function (key) {
+      const name = modelGroup(key);
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(key);
+    });
+    groups.forEach(function (keys, name) {
+      const group = document.createElement('optgroup');
+      group.label = name;
+      keys.forEach(function (key) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = modelLabel(key);
+        group.appendChild(option);
+      });
+      select.appendChild(group);
+    });
+    if (selected && MODEL_RECORDS[selected]) select.value = selected;
+  }
+
+  function modelFootprint(a) {
+    const key = a && (a.model || a.modelKey || a.key);
+    const model = key && MODEL_RECORDS[key];
+    if (!model || !model.bounds || !CC.AssetLoader || !CC.AssetLoader.footprint) return null;
+    const fp = CC.AssetLoader.footprint(key);
+    if (!fp) return null;
+    const scale = (Number(a.scale) || 1) * (Number(model.scale) || 1);
+    return { w: fp.w * scale, l: fp.l * scale, h: fp.h * scale };
+  }
 
   const state = {
     world: Object.assign({}, DEFAULT_WORLD),
@@ -270,6 +323,7 @@
       return ({ store: '#e6d6ad', restaurant: '#d9c7a8', launch: '#8db8c9', pavilion: '#b6a37c' })[a.type] || '#c9b79a';
     }
     if (a.type === 'tree') return '#4d8a4a';
+    if (a.type === 'model' || a.type === 'glb' || a.type === 'gltf') return '#57b7c8';
     if (a.type === 'bridge') return '#5b5f66';
     return '#d9c7a8';
   }
@@ -316,12 +370,24 @@
     ctx.setLineDash([]);
   }
 
+  function drawModel(a, dashed) {
+    const fp = modelFootprint(a);
+    const proxy = Object.assign({}, a, {
+      w: fp ? fp.w : (a.w || 4),
+      l: fp ? fp.l : (a.l || 4),
+      color: a.color != null ? a.color : 0x57b7c8,
+      name: a.name || modelLabel(a.model || a.key || 'Model') + ' · model'
+    });
+    drawRectAsset(proxy, 'asset', dashed);
+  }
+
   function drawAssets() {
     if (state.layers.buildings) state.buildings.forEach(function (a) { drawRectAsset(a, 'building', false); });
     if (state.layers.landmarks) state.landmarks.forEach(function (a) { drawRectAsset(a, 'landmark', false); });
     if (!state.layers.custom) return;
     state.assets.forEach(function (a) {
       if (a.type === 'tree') drawTree(a, false);
+      else if (a.type === 'model' || a.type === 'glb' || a.type === 'gltf') drawModel(a, false);
       else drawRectAsset(a, 'asset', false);
     });
   }
@@ -395,6 +461,7 @@
       const a = getSelectedObject();
       if (!a) return;
       if (a.type === 'tree') drawTree(a, true);
+      else if (a.type === 'model' || a.type === 'glb' || a.type === 'gltf') drawModel(a, true);
       else drawRectAsset(a, s.kind, true);
     }
     ctx.restore();
@@ -458,11 +525,15 @@
           }
           continue;
         }
+        const fp = (a.type === 'model' || a.type === 'glb' || a.type === 'gltf')
+          ? modelFootprint(a) : null;
+        const hitW = fp ? fp.w : (a.w || 10);
+        const hitL = fp ? fp.l : (a.l || 8);
         const dx = p.x - a.x, dz = p.z - a.z;
         const c = Math.cos(a.rot || 0), s = Math.sin(a.rot || 0);
         const lx = dx * c - dz * s;
         const ly = dx * s + dz * c;
-        if (Math.abs(lx) <= (a.w || 10) * 0.5 + pad && Math.abs(ly) <= (a.l || 8) * 0.5 + pad) {
+        if (Math.abs(lx) <= hitW * 0.5 + pad && Math.abs(ly) <= hitL * 0.5 + pad) {
           return { kind: group.kind, index: i };
         }
       }
@@ -567,12 +638,21 @@
     if (!obj) {
       $('selectionEmpty').hidden = false;
       $('selectionForm').hidden = true;
+      $('selModelRow').hidden = true;
+      $('selScaleRow').hidden = true;
       return;
     }
     $('selectionEmpty').hidden = true;
     $('selectionForm').hidden = false;
     const s = state.selection;
     const isRoad = s.kind === 'road';
+    const isModel = obj.type === 'model' || obj.type === 'glb' || obj.type === 'gltf';
+    $('selModelRow').hidden = !isModel;
+    $('selScaleRow').hidden = !isModel;
+    if (isModel) {
+      fillModelSelect($('selModel'), obj.model || obj.modelKey || obj.key);
+      $('selScale').value = Number(obj.scale) || 1;
+    }
     $('selType').value = isRoad ? (obj.type || 'road') : (obj.type || s.kind);
     $('selName').value = obj.name || '';
     if (isRoad && s.vertex != null) {
@@ -622,6 +702,16 @@
       if ($('selH').value !== '') obj.h = Number($('selH').value);
       const c = parseColor($('selColor').value);
       if (c != null) obj.color = c;
+      if (obj.type === 'model' || obj.type === 'glb' || obj.type === 'gltf') {
+        obj.model = $('selModel').value || obj.model || obj.key;
+        obj.scale = Math.max(0.05, Number($('selScale').value) || 1);
+        const fp = modelFootprint(obj);
+        if (fp) {
+          obj.w = fp.w;
+          obj.l = fp.l;
+          obj.h = fp.h;
+        }
+      }
     }
     updateSelectionForm();
     render();
@@ -1382,15 +1472,18 @@
   }
 
   /* ---------- new asset dialog ---------- */
-  const ASSET_LABELS = { building: 'Building', bridge: 'Bridge', tree: 'Tree' };
+  const ASSET_LABELS = { building: 'Building', bridge: 'Bridge', tree: 'Tree', model: 'Model' };
 
-  function askAssetDetails(type, defaultName) {
+  function askAssetDetails(type, defaultName, defaultModel) {
     return new Promise(function (resolve) {
       const dialog = $('assetDialog');
+      const isModel = type === 'model';
       $('assetDialogType').textContent = (ASSET_LABELS[type] || 'Asset') + ' — describe what you are adding to the map.';
       assetDialogDefault = defaultName || ('Editor ' + (ASSET_LABELS[type] || 'Asset'));
       $('assetName').value = assetDialogDefault;
       $('assetDesc').value = '';
+      $('assetModelRow').hidden = !isModel;
+      if (isModel) fillModelSelect($('assetModel'), defaultModel || MODEL_KEYS[0]);
       dialog.hidden = false;
       assetDialogResolve = resolve;
       setTimeout(function () { $('assetName').focus(); $('assetName').select(); }, 0);
@@ -1407,7 +1500,8 @@
   function submitAssetDialog() {
     closeAssetDialog({
       name: $('assetName').value.trim() || assetDialogDefault,
-      description: $('assetDesc').value.trim()
+      description: $('assetDesc').value.trim(),
+      model: $('assetModel').value || MODEL_KEYS[0]
     });
   }
 
@@ -1574,6 +1668,30 @@
       return;
     }
 
+    if (state.tool === 'model') {
+      const at = { x: world.x, z: world.z };
+      const key = $('modelKey').value || MODEL_KEYS[0];
+      askAssetDetails('model', 'Editor ' + modelLabel(key), key).then(function (info) {
+        if (!info) { setMessage('Asset creation cancelled.'); return; }
+        pushUndo();
+        const chosen = info.model || key;
+        const scale = Math.max(0.05, Number($('modelScale').value) || 1);
+        const asset = {
+          id: 'edit_' + Date.now(), type: 'model', model: chosen,
+          name: info.name, description: info.description,
+          x: at.x, z: at.z, y: 0, scale: scale, rot: 0
+        };
+        const fp = modelFootprint(asset);
+        if (fp) { asset.w = fp.w; asset.l = fp.l; asset.h = fp.h; }
+        if (info.color != null) asset.color = info.color;
+        state.assets.push(asset);
+        state.selection = { kind: 'asset', index: state.assets.length - 1 };
+        updateSelectionForm(); render();
+        setMessage('Model placed: ' + modelLabel(chosen) + '.');
+      });
+      return;
+    }
+
     if (state.tool === 'assetErase') {
       const a = hitAsset(pos.sx, pos.sy);
       if (!a) { setMessage('No asset under the cursor.'); return; }
@@ -1673,7 +1791,7 @@
     if (e.key === '+' || e.key === '=') { zoomAt(1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); return; }
     if (e.key === '-') { zoomAt(1 / 1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); return; }
     if (e.key === '0') { fitView(); render(); return; }
-    const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', x: 'assetErase', h: 'pan' };
+    const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', m: 'model', x: 'assetErase', h: 'pan' };
     const k = e.key.toLowerCase();
     if (shortcuts[k]) setTool(shortcuts[k]);
   });
@@ -1700,6 +1818,7 @@
   $('zoomFitBtn').addEventListener('click', function () { fitView(); render(); });
   $('roadWidth').addEventListener('input', function () { $('roadWidthOut').textContent = $('roadWidth').value; render(); });
   $('treeScale').addEventListener('input', function () { $('treeScaleOut').textContent = Number($('treeScale').value).toFixed(1); });
+  $('modelScale').addEventListener('input', function () { $('modelScaleOut').textContent = Number($('modelScale').value).toFixed(2); });
   ['showRoads', 'showBuildings', 'showLandmarks', 'showCustom'].forEach(function (id) {
     $(id).addEventListener('change', function () {
       state.layers[id.replace('show', '').toLowerCase()] = $(id).checked;
@@ -1758,6 +1877,9 @@
   window.addEventListener('resize', resize);
 
   /* ---------- boot ---------- */
+  fillModelSelect($('modelKey'), MODEL_KEYS[0]);
+  fillModelSelect($('assetModel'), MODEL_KEYS[0]);
+  fillModelSelect($('selModel'), MODEL_KEYS[0]);
   initData();
   buildTerrain();
   resize();

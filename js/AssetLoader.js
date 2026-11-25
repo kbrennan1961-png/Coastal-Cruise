@@ -127,6 +127,60 @@
     return bodyMaterials[key];
   }
 
+  const staticRoleMaterials = {};
+  function staticRoleMaterial(role, color) {
+    const c = color == null ? 0x4b8fd6 : Number(color) >>> 0;
+    const key = role + '|' + c;
+    if (staticRoleMaterials[key]) return staticRoleMaterials[key];
+    let mat;
+    if (role === 'body') {
+      mat = bodyMaterial(c);
+    } else if (role === 'bodyAccent') {
+      const accent = new THREE.Color(c).lerp(new THREE.Color(0xffffff), 0.62).getHex();
+      mat = bodyMaterial(accent);
+    } else if (role === 'glass') {
+      mat = new THREE.MeshStandardMaterial({
+        color: 0x3a6b83, emissive: 0x0b1a22, metalness: 0.18, roughness: 0.22,
+        transparent: true, opacity: 0.78, side: THREE.DoubleSide
+      });
+    } else if (role === 'head') {
+      mat = new THREE.MeshStandardMaterial({
+        color: 0xfff3c4, emissive: 0xffdf9a, emissiveIntensity: 0.8
+      });
+    } else if (role === 'brake') {
+      mat = new THREE.MeshStandardMaterial({ color: 0x7a2018, roughness: 0.4 });
+    } else if (role === 'sirenRed') {
+      mat = new THREE.MeshStandardMaterial({
+        color: 0xd84035, emissive: 0xff2a14, emissiveIntensity: 0.05, flatShading: true
+      });
+    } else if (role === 'sirenBlue') {
+      mat = new THREE.MeshStandardMaterial({
+        color: 0x3d8fe0, emissive: 0x2a7ee8, emissiveIntensity: 0.05, flatShading: true
+      });
+    } else {
+      mat = propMaterial({ role: role });
+    }
+    staticRoleMaterials[key] = mat;
+    return mat;
+  }
+
+  function staticPartMaterial(model, part, color) {
+    if (part.texture) return texturedMaterial(part.texture);
+    if (model.kind === 'house') return houseMaterial(part.role);
+    if (model.texture) return paletteMaterial(model.texture);
+    return staticRoleMaterial(part.role || 'default', color);
+  }
+
+  let staticWheelMats = null;
+  function getStaticWheelMats() {
+    if (staticWheelMats) return staticWheelMats;
+    staticWheelMats = {
+      tyre: new THREE.MeshLambertMaterial({ color: 0x24282b, flatShading: true }),
+      hub: new THREE.MeshLambertMaterial({ color: 0x777d80, flatShading: true })
+    };
+    return staticWheelMats;
+  }
+
   const Loader = (CC.AssetLoader = {
     available: true,
     models: assets.models,
@@ -227,6 +281,51 @@
         group.add(mesh);
       });
       group.scale.setScalar(scale || 1);
+      return group;
+    },
+
+    /* One-off static instance of any baked model. Map-editor placements use
+       this for houses, trailers, vehicles, vegetation, rocks and props. */
+    buildModel: function (name, opts) {
+      const model = assets.models[name];
+      if (!model || !model.parts) return null;
+      opts = opts || {};
+      const scale = (Number(model.scale) || 1) * (Number(opts.scale) || 1);
+      const color = opts.color == null ? 0x4b8fd6 : Number(opts.color) >>> 0;
+      const group = new THREE.Group();
+      group.name = 'Map model: ' + name;
+
+      model.parts.forEach(function (part) {
+        const mat = staticPartMaterial(model, part, color);
+        if (!mat) return;
+        const mesh = new THREE.Mesh(geometry(part), mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      });
+
+      group.scale.setScalar(scale);
+      const wheels = model.wheels && opts.wheels !== false ? model.wheels : null;
+      const minY = model.bounds ? Number(model.bounds.min[1]) || 0 : 0;
+      group.position.y = wheels && wheels.length ? 0 : -minY * scale;
+
+      if (wheels && wheels.length) {
+        const mats = getStaticWheelMats();
+        wheels.forEach(function (w) {
+          const radius = Math.max(0.15, Number(w.y) || 0.4);
+          const pivot = new THREE.Group();
+          pivot.position.set(w.x || 0, w.y || 0.4, w.z || 0);
+          pivot.rotation.z = Math.PI / 2;
+          const tyre = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius, radius, radius * 0.72, 10), mats.tyre);
+          tyre.castShadow = true;
+          pivot.add(tyre);
+          const hub = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius * 0.48, radius * 0.48, radius * 0.75, 8), mats.hub);
+          pivot.add(hub);
+          group.add(pivot);
+        });
+      }
       return group;
     }
   });

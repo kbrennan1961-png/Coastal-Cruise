@@ -213,6 +213,37 @@
     }
   }
 
+  function buildModel(group, a) {
+    const loader = CC.AssetLoader;
+    const key = a.model || a.modelKey || a.key;
+    if (!loader || !loader.available || !loader.models || !loader.models[key]) return;
+    const scale = Math.max(0.05, Number(a.scale) || 1);
+    let color = a.color;
+    if (typeof color === 'string' && color.charAt(0) === '#') color = parseInt(color.slice(1), 16);
+    const obj = loader.buildModel(key, {
+      scale: scale,
+      color: color == null ? undefined : color
+    });
+    if (!obj) return;
+    obj.position.set(Number(a.x) || 0,
+      groundY(Number(a.x) || 0, Number(a.z) || 0) + (Number(a.y) || 0),
+      Number(a.z) || 0);
+    obj.rotation.y = Number(a.rot) || 0;
+    group.add(obj);
+
+    const fp = loader.footprint(key);
+    const baseScale = Number(loader.models[key].scale) || 1;
+    if (fp && CC.World && CC.World.obstacles) {
+      const size = Math.max(fp.w, fp.l) * baseScale * scale;
+      if (size >= 1.4) {
+        CC.World.obstacles.push({
+          x: Number(a.x) || 0, z: Number(a.z) || 0,
+          r: size * 0.45, type: 'map edit model'
+        });
+      }
+    }
+  }
+
   // Called from World.init() once the scene and world arrays exist.
   CC.buildMapEdits = function (scene) {
     const assets = CC.mapEdits && CC.mapEdits.assets;
@@ -224,6 +255,7 @@
       if (a.type === 'building') buildBuilding(group, a);
       else if (a.type === 'bridge') buildBridge(group, a);
       else if (a.type === 'tree') buildTree(group, a);
+      else if (a.type === 'model' || a.type === 'glb' || a.type === 'gltf') buildModel(group, a);
     });
     scene.add(group);
     CC.World.mapEditGroup = group;

@@ -3960,7 +3960,7 @@
       };
       const homes = CC.World.obstacles.filter(o => o.type === 'home');
       // Roadside cars that can be stolen by walking up and pressing E.
-      const paved = CC.roadDefs.filter(r => r.type === 'paved');
+      const paved = CC.roadDefs.filter(r => r.type === 'paved' && r._length > 4);
       const carColors = [0xb9b6aa, 0x6d889f, 0xb56d5e, 0x8ca178, 0xc7a755, 0x707b84, 0xd9dde0];
       const parkedKinds = ['car', 'car', 'truck', 'coupe', 'muscleCar', 'taxi', 'limo', 'offroad', 'compact'];
       for (let i = 0; i < 20; i++) {
@@ -4081,7 +4081,7 @@
       }
 
       // Sidewalk strollers.
-      for (let i = 0; i < 18; i++) {
+      for (let i = 0; i < 18 && paved.length; i++) {
         const road = U.pick(rng, paved);
         const p = CC.sampleRoad(road, rng() * road._length);
         const side = rng() < 0.5 ? 1 : -1;
@@ -4090,7 +4090,7 @@
         makePedAt(x, z, rng() < 0.4 ? 'walk' : 'idle');
       }
       // Beat cops walking the streets and guarding the station entrance.
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 12 && paved.length; i++) {
         const road = U.pick(rng, paved);
         const p = CC.sampleRoad(road, rng() * road._length);
         const side = rng() < 0.5 ? 1 : -1;
@@ -4105,7 +4105,7 @@
       });
       // Roving crews work the streets: they wave guns at pedestrians and grab
       // parked cars, then cruise off in the stolen ride.
-      for (let g = 0; g < 3; g++) {
+      for (let g = 0; g < 3 && paved.length; g++) {
         const gang = { id: g };
         const road = U.pick(rng, paved);
         const p = CC.sampleRoad(road, U.randRange(rng, 30, Math.max(40, road._length - 30)));

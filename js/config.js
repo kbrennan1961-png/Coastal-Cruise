@@ -795,6 +795,8 @@
   }
   CC.busRouteLegs = function () {
     const r = CC.roadDefs;
+    // Blank standalone maps have no baked bus loop.
+    if (!r || r.length < 5) return [];
     return [
       { road: 3, from: 0, to: roadStation(r[3], 318, -35), dir: 1 },
       { road: 1, from: roadStation(r[1], 318, -35), to: roadStation(r[1], 330, 150), dir: 1 },

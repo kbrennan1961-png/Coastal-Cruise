@@ -29,6 +29,19 @@ The radio MP3s in `audio/` are compressed to under 25 MB each. The repo uses
 Git LFS for `*.mp3`, so GitHub stores small pointer files and LFS-aware builds
 fetch the real audio. See `audio/README.md` for bitrates and filenames.
 
+This Mac does **not** push directly to GitHub. `origin` points to the bare repo
+on the mini PC (`obsidian-vault:git/Coastal-Cruise.git`), and the mini PC pushes
+that history to GitHub from its bridge clone. After committing on the Mac:
+
+```bash
+git push origin main
+ssh obsidian-vault 'git -C ~/git/Coastal-Cruise-bridge pull origin main && git -C ~/git/Coastal-Cruise-bridge push github main'
+```
+
+The mini PC bridge clone has `origin` set to the local bare repo and
+`remote.pushDefault` set to `github`, so GitHub and Netlify only see pushes
+from the mini PC.
+
 ## Blender 3.6 asset workflow
 
 Blender **3.6** is the version used for the baked CC0 models. The export scripts
@@ -51,9 +64,30 @@ Typical loop:
 3. Run `node tools/import-assets.js ...` to regenerate the baked JS bundle.
 4. Hard-refresh `index.html` and verify in-game.
 
-Keep textures small and retain the flat-shaded PS2 look. For map layout work,
-Blender can export the map editor's native JSON patch shape; the editor currently
-places primitive `building`, `bridge` and `tree` assets.
+Keep textures small and retain the flat-shaded PS2 look.
+
+### Blender ↔ map editor
+
+For layout work, two more Blender 3.6 scripts exchange the map editor's native
+JSON patch shape:
+
+```bash
+# Blender -> map editor JSON (roads, buildings, bridges, trees, models, elevation)
+/Applications/Blender.app/Contents/MacOS/Blender -b scene.blend \
+  --python tools/blender_map_export.py -- layout.json
+
+# MapEdits.js or JSON -> Blender proxy objects
+/Applications/Blender.app/Contents/MacOS/Blender -b \
+  --python tools/blender_map_import.py -- js/MapEdits.js --clear \
+  --save /tmp/coastal-map.blend
+```
+
+Set `cc_type` on objects to `road`, `building`, `bridge`, `tree`, `model`, or
+`elevation`. For `model`, set `cc_model_key` to a baked model name (for example
+`retro1`, `sedan`, `pine`, or `downloadedRock0`) plus optional `cc_scale`,
+`cc_y`, `cc_rot`, and `cc_color`. Name prefixes such as `model_`, `road_`, and
+`elev_` also work. Blender coordinates map to the game as `X → x`,
+`Y → -Z`, `Z → height`, and Blender Z rotation → game Y rotation.
 
 ## Map editor
 
@@ -62,7 +96,7 @@ network with an X/Z coordinate grid over the coast, river and town. Use
 **New map** to start a blank project with your own width/height (centred on
 X0/Z0); exported patches then redefine the game's world bounds and base map.
 **Import data** reads OSM XML, GeoJSON, or this editor's JSON patch shape,
-including roads, buildings, trees and elevation. OSM `highway` ways become
+including roads, buildings, trees, baked models and elevation. OSM `highway` ways become
 roads, `building` ways become buildings, `natural=tree` nodes become trees, and
 `ele` tags become terrain bumps.
 
@@ -72,7 +106,9 @@ Tools:
 - **Road** (`B`) — click to add points, double-click or `Enter` to finish.
 - **Erase road** (`E`) — click a segment to split it, `Shift`+click to delete the road.
 - **Building** (`R`) and **Bridge** (`G`) — drag to size; a bridge also adds a drivable road.
-- **Tree** (`T`) and **Erase asset** (`X`) — place or remove props. New assets open a dialog for a name and description; descriptions stay editable in the inspector.
+- **Tree** (`T`) — place a primitive tree.
+- **Model** (`M`) — place any baked model from the brush list (vehicles, pines, houses, trailers, rocks and props). Rotation and height are editable in the inspector.
+- **Erase asset** (`X`) — remove any placed asset. New assets open a dialog for a name and description; descriptions stay editable in the inspector.
 - **Pan** (`H`) / middle mouse / `Space`+drag; scroll to zoom; `0` fits the map.
 
 Use **Apply to game** to export `MapEdits.js`. Save that file over

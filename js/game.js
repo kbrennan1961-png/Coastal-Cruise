@@ -1925,11 +1925,17 @@
     CC.StaticBatcher.run(scene);
 
     // Spawn on the main road (the longest one on a traced picture map).
+    // Standalone blank maps have no roads, so fall back to the map centre.
     const road = CC.roadDefs[0];
-    const start = CC.sampleRoad(road, Math.min(52, road._length * 0.25));
-    const sx = start.x + start.dz * 3.0;
-    const sz = start.z - start.dx * 3.0;
-    const heading = Math.atan2(start.dx, start.dz);
+    let sx = (C.WORLD.minX + C.WORLD.maxX) * 0.5;
+    let sz = (C.WORLD.minZ + C.WORLD.maxZ) * 0.5;
+    let heading = 0;
+    if (road && road._length > 4) {
+      const start = CC.sampleRoad(road, Math.min(52, road._length * 0.25));
+      sx = start.x + start.dz * 3.0;
+      sz = start.z - start.dx * 3.0;
+      heading = Math.atan2(start.dx, start.dz);
+    }
 
     mark('scene/vehicles');
     CC.vehicleOrder.forEach(function (key, i) {
@@ -3609,15 +3615,16 @@
       Game.resCooldown = (Game.resCooldown || 0) - dt;
       if (Game.resCooldown <= 0) {
         Game.resCooldown = 0.75;
-        const ratio = renderer.getPixelRatio();
+        if (!Game.renderer) return;
+        const ratio = Game.renderer.getPixelRatio();
         let next = ratio;
         if (Game.frameAvg > 0.0195 && ratio > 0.7) next = Math.max(0.7, ratio - 0.1);
         else if (Game.frameAvg < 0.0135 && ratio < Game.basePixelRatio) {
           next = Math.min(Game.basePixelRatio, ratio + 0.05);
         }
         if (next !== ratio) {
-          renderer.setPixelRatio(next);
-          renderer.setSize(window.innerWidth, window.innerHeight, false);
+          Game.renderer.setPixelRatio(next);
+          Game.renderer.setSize(window.innerWidth, window.innerHeight, false);
         }
       }
     }

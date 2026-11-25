@@ -614,8 +614,8 @@
   function buildProps(scene) {
     // Mobile homes along the roads, facing the street.
     let homes = 0;
-    const pavedRoads = CC.roadDefs.filter(r => r.type === 'paved');
-    const outer = [pavedRoads[0], pavedRoads[1], pavedRoads[2], pavedRoads[3], pavedRoads[4]];
+    const pavedRoads = CC.roadDefs.filter(r => r.type === 'paved' && r._length > 14);
+    const outer = pavedRoads.slice(0, 5);
     for (let pass = 0; pass < 3 && homes < 36; pass++) {
       for (let ri = 0; ri < outer.length && homes < 36; ri++) {
         const road = outer[ri];
@@ -712,8 +712,9 @@
     }
 
     // Extra scattered yard props along gravel/inner roads.
-    for (let i = 0; i < 26; i++) {
-      const road = U.pick(rng, CC.roadDefs.filter(r => r.type !== 'boardwalk'));
+    const propRoads = CC.roadDefs.filter(r => r.type !== 'boardwalk' && r._length > 4);
+    for (let i = 0; i < 26 && propRoads.length; i++) {
+      const road = U.pick(rng, propRoads);
       const p = CC.sampleRoad(road, rng() * road._length);
       const side = rng() < 0.5 ? 1 : -1;
       const x = p.x + p.dz * side * (road.width * 0.5 + U.randRange(rng, 3, 9));
