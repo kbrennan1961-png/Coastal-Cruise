@@ -177,8 +177,9 @@
       if (!template) return null;
       const group = new THREE.Group();
       const model = template.source.clone(true);
-      model.scale.setScalar(template.scale * (Number(opts.scale) || 1));
-      model.position.y = template.offsetY * (Number(opts.scale) || 1);
+      const scaleMul = Number(opts.scale) || 1;
+      model.scale.setScalar(template.scale * scaleMul);
+      model.position.y = template.offsetY * scaleMul;
       group.add(model);
       patchPlaceholderTextures(model, opts.texture || template.texture, template.pixelTextures);
 
@@ -232,7 +233,7 @@
         group: group,
         mixer: mixer,
         actions: actions,
-        radius: template.radius,
+        radius: Math.max(0.12, template.radius * scaleMul),
         clipNames: Object.keys(clips),
         label: template.label,
         kind: template.kind,

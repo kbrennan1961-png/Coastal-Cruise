@@ -1148,6 +1148,7 @@
       this.motelHailing = false;
       this.isGang = this.role === 'gang';
       this.isPatron = this.role === 'patron';
+      this.isRoach = this.role === 'roach';
       this.isBoardwalker = this.role === 'boardwalk' || this.role === 'pierwalk' || this.role === 'pierfish';
       this.path = owner && owner.path ? owner.path : null;
       this.deckOffset = owner && typeof owner.deckOffset === 'number' ? owner.deckOffset : 0;
@@ -1168,8 +1169,9 @@
       this.workFacing = owner && typeof owner.yaw === 'number' ? owner.yaw : -Math.PI / 2;
       this.workTimer = U.randRange(rng, 0.5, 3);
       this.heading = rng() * Math.PI * 2;
-      this.speed = pace('walker') * (this.role === 'cop' ? U.randRange(rng, 1.7, 2.4) :
-        this.isGang ? U.randRange(rng, 2.0, 2.9) : U.randRange(rng, 0.9, 1.6));
+      this.speed = this.isRoach ? U.randRange(rng, 2.2, 3.4) :
+        pace('walker') * (this.role === 'cop' ? U.randRange(rng, 1.7, 2.4) :
+          this.isGang ? U.randRange(rng, 2.0, 2.9) : U.randRange(rng, 0.9, 1.6));
       this.target = new THREE.Vector2(x, z);
       this.idleTimer = U.randRange(rng, 1, 5);
       this.fleeTimer = 0;
@@ -1361,7 +1363,7 @@
 
     chooseGangTarget() {
       const people = NPCSystem.pedestrians.filter(function (p) {
-        return p !== this && !p.isGang && p.role !== 'cop' && !p.inVehicle &&
+        return p !== this && !p.isGang && !p.isRoach && p.role !== 'cop' && !p.inVehicle &&
           U.distance2D(p.position.x, p.position.z, this.position.x, this.position.z) < 55;
       }, this);
       const cars = NPCSystem.parkedCars.filter(function (c) {
@@ -1538,6 +1540,29 @@
         } else {
           this.heading = U.angleLerp(this.heading, this.workFacing,
             1 - Math.exp(-1.5 * dt));
+        }
+      } else if (this.isRoach) {
+        // Roaches dart between short targets, pause, then scurry again. They
+        // stay near their spawn so they read as local pests, not road traffic.
+        this.idleTimer -= dt;
+        const tx = this.target.x - this.position.x;
+        const tz = this.target.y - this.position.z;
+        const d = Math.hypot(tx, tz);
+        if (d < 0.45 || this.idleTimer <= 0) {
+          const a = rng() * Math.PI * 2;
+          const r = U.randRange(rng, 1.5, 5.5);
+          let nx = this.workHome.x + Math.cos(a) * r;
+          let nz = this.workHome.y + Math.sin(a) * r;
+          if (CC.coast.isWater(nx, nz)) { nx = this.workHome.x; nz = this.workHome.y; }
+          this.target.set(nx, nz);
+          this.idleTimer = U.randRange(rng, 0.6, 2.2);
+        } else {
+          const step = Math.min(d, this.speed * dt);
+          this.position.x += tx / d * step;
+          this.position.z += tz / d * step;
+          this.heading = U.angleLerp(this.heading, Math.atan2(tx, tz), 1 - Math.exp(-9 * dt));
+          moving = true;
+          this.walkPhase += dt * 22;
         }
       } else if (this.role === 'cop' && CC.NPCSystem && CC.NPCSystem.arrest.active &&
                  CC.NPCSystem.arrest.officer === this) {
@@ -4307,6 +4332,42 @@
           ped.attachDownloaded(key, { moving: false });
           NPCSystem.downloadedPedestrians.push(ped);
         }
+      }
+
+      // Roaming cockroaches: small, fast pests that scurry around buildings and
+      // roadside lots. They opt in to the baked animated roach GLB so the town
+      // feels alive without touching the ordinary townsfolk population.
+      NPCSystem.roaches = [];
+      const roachCount = DL && DL.creatureKeys && DL.creatureKeys.indexOf('roach') >= 0 ? 18 : 0;
+      const roachObstacles = CC.World.obstacles || [];
+      const roachSpotClear = function (x, z) {
+        for (let i = 0; i < roachObstacles.length; i++) {
+          const o = roachObstacles[i];
+          if (U.distance2D(x, z, o.x, o.z) < (o.r || 1) + 2) return false;
+        }
+        return true;
+      };
+      for (let i = 0; i < roachCount; i++) {
+        let spot = null;
+        for (let attempt = 0; attempt < 60 && !spot; attempt++) {
+          const candidate = findLandSpot(4);
+          if (!roachSpotClear(candidate.x, candidate.z)) continue;
+          const nr = CC.nearestRoad(candidate.x, candidate.z);
+          if (nr && nr.dist > 22) continue;
+          // Half the roaches stay near the starting road so players meet them
+          // early; the rest scatter across the wider town.
+          if (i < roachCount / 2 &&
+              U.distance2D(candidate.x, candidate.z, -106, -35) > 110) continue;
+          spot = candidate;
+        }
+        if (!spot) spot = findLandSpot(4);
+        const roach = new Pedestrian(scene, spot.x, spot.z, 'roach');
+        roach.homeRadius = 5;
+        roach.radius = 0.2;
+        roach.target.set(spot.x + U.randRange(rng, -2, 2), spot.z + U.randRange(rng, -2, 2));
+        roach.attachDownloaded('roach', { scale: 0.13, moving: true, clip: 'Run' });
+        NPCSystem.pedestrians.push(roach);
+        NPCSystem.roaches.push(roach);
       }
     },
     update(dt, player, world, audio) {

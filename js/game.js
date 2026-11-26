@@ -658,7 +658,9 @@
     vehicles: {},
     activeKey: 'coupe',
     lastVehicle: 'pedestrian',
-    pedSkin: 'default',
+    // The on-foot body now ships as the baked redneck character. Classic and
+    // roach remain available from the vehicle menu.
+    pedSkin: 'redneck',
     started: false,
     bootMessage: '',
     freeRoam: false,
@@ -2019,16 +2021,19 @@
 
   // Swapping the on-foot body keeps activeKey === 'pedestrian', so every
   // existing on-foot rule (rescue, safe houses, crimes, swimming) still works.
-  function setPedestrianSkin(key) {
+  function setPedestrianSkin(key, announce) {
     const wanted = key && key !== 'default' ? key : 'default';
+    const quiet = announce === false;
     Game.pedSkin = wanted;
     const ped = Game.vehicles && Game.vehicles.pedestrian;
     if (!ped || !ped.setSkin) return Promise.resolve(null);
     return ped.setSkin(wanted).then(function (rig) {
       updateVehicleHud();
-      if (wanted === 'default') toast('On foot: classic pedestrian', 2);
-      else if (rig) toast('On foot: ' + (CC.DownloadedCharacterLoader.label(wanted) || wanted), 2.2);
-      else toast('That character could not be loaded', 2.4);
+      if (!quiet) {
+        if (wanted === 'default') toast('On foot: classic pedestrian', 2);
+        else if (rig) toast('On foot: ' + (CC.DownloadedCharacterLoader.label(wanted) || wanted), 2.2);
+        else toast('That character could not be loaded', 2.4);
+      }
       return rig;
     });
   }
@@ -4128,6 +4133,11 @@
       if (loading) loading.classList.add('hidden');
       stage('scene');
       initScene();
+      // Apply the default on-foot body quietly during boot so the player
+      // becomes the redneck as soon as they step out of the starting car.
+      if (Game.pedSkin && Game.pedSkin !== 'default') {
+        setPedestrianSkin(Game.pedSkin, false);
+      }
       stage('hud');
       applySplashMedia();
       updateVehicleHud();

@@ -166,6 +166,9 @@
 
   function staticPartMaterial(model, part, color) {
     if (part.texture) return texturedMaterial(part.texture);
+    // Baked props can carry their own material colour (e.g. the F-16's desert
+    // camo) instead of sharing the generic map-edit body colour.
+    if (part.color != null) return bodyMaterial(Number(part.color) >>> 0);
     if (model.kind === 'house') return houseMaterial(part.role);
     if (model.texture) return paletteMaterial(model.texture);
     return staticRoleMaterial(part.role || 'default', color);

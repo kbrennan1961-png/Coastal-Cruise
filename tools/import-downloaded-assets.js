@@ -123,6 +123,107 @@ function dataURI(file, mime) {
   return 'data:' + (mime || 'image/png') + ';base64,' + fs.readFileSync(file).toString('base64');
 }
 
+// Bake a static GLB prop (the F-16) into the same part format used by
+// GeneratedAssets. Each glTF material becomes one part carrying its own
+// baseColorFactor so the desert camo and Star-of-David roundels keep their
+// colours without needing a texture atlas.
+function bakeStaticProp(glb, targetHeight) {
+  const nodes = glb.json.nodes || [];
+  const world = new Array(nodes.length).fill(null);
+  const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  function visit(i, parent) {
+    const n = nodes[i];
+    const m = matMul(parent, nodeMatrix(n));
+    world[i] = m;
+    (n.children || []).forEach(function (child) { visit(child, m); });
+  }
+  const roots = glb.json.scenes && glb.json.scenes[0] && glb.json.scenes[0].nodes;
+  (roots || nodes.map(function (_, i) { return i; })).forEach(function (i) { visit(i, identity); });
+
+  const groups = {};
+  const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+  nodes.forEach(function (node, ni) {
+    if (node.mesh == null || !world[ni]) return;
+    const mesh = glb.json.meshes[node.mesh];
+    mesh.primitives.forEach(function (prim) {
+      if ((prim.mode == null ? 4 : prim.mode) !== 4) return;
+      const srcPos = readAccessor(glb, prim.attributes.POSITION, true);
+      const srcNorm = prim.attributes.NORMAL != null
+        ? readAccessor(glb, prim.attributes.NORMAL, true) : null;
+      const srcIdx = prim.indices != null ? readAccessor(glb, prim.indices, false) : null;
+      const count = srcPos.length / 3;
+      const pos = new Float32Array(count * 3);
+      const norm = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const p = transformPoint(world[ni], [srcPos[i * 3], srcPos[i * 3 + 1], srcPos[i * 3 + 2]]);
+        // Blender GLB was authored Y=up/Z=length; map to game X=span,
+        // Y=height, Z=length (nose toward +Z).
+        pos[i * 3] = p[0]; pos[i * 3 + 1] = p[2]; pos[i * 3 + 2] = p[1];
+        for (let k = 0; k < 3; k++) {
+          bounds.min[k] = Math.min(bounds.min[k], pos[i * 3 + k]);
+          bounds.max[k] = Math.max(bounds.max[k], pos[i * 3 + k]);
+        }
+        if (srcNorm) {
+          const n = transformDir(world[ni], [srcNorm[i * 3], srcNorm[i * 3 + 1], srcNorm[i * 3 + 2]]);
+          norm[i * 3] = n[0]; norm[i * 3 + 1] = n[2]; norm[i * 3 + 2] = n[1];
+        }
+      }
+      const material = glb.json.materials && prim.material != null
+        ? glb.json.materials[prim.material] : null;
+      const name = material && material.name || 'prop';
+      const factor = material && material.pbrMetallicRoughness &&
+        material.pbrMetallicRoughness.baseColorFactor || [0.8, 0.8, 0.8, 1];
+      const color = (Math.round((factor[0] || 0) * 255) << 16) |
+        (Math.round((factor[1] || 0) * 255) << 8) |
+        Math.round((factor[2] || 0) * 255);
+      const role = name.replace(/[^A-Za-z0-9]/g, '');
+      if (!groups[role]) groups[role] = { pos: [], norm: [], idx: [], count: 0, color: color };
+      const g = groups[role], offset = g.count;
+      for (let i = 0; i < pos.length; i++) g.pos.push(pos[i]);
+      for (let i = 0; i < norm.length; i++) g.norm.push(norm[i]);
+      if (srcIdx) {
+        for (let i = 0; i < srcIdx.length; i++) g.idx.push(offset + srcIdx[i]);
+      } else {
+        for (let i = 0; i < count; i++) g.idx.push(offset + i);
+      }
+      g.count += count;
+    });
+  });
+
+  // Recenter on the ground and scale to the requested height.
+  const cx = (bounds.min[0] + bounds.max[0]) * 0.5;
+  const cz = (bounds.min[2] + bounds.max[2]) * 0.5;
+  const y0 = bounds.min[1];
+  const scale = targetHeight / Math.max(0.0001, bounds.max[1] - bounds.min[1]);
+  const parts = Object.keys(groups).map(function (role) {
+    const g = groups[role];
+    const pos = new Float32Array(g.pos.length);
+    for (let i = 0; i < g.pos.length; i += 3) {
+      pos[i] = (g.pos[i] - cx) * scale;
+      pos[i + 1] = (g.pos[i + 1] - y0) * scale;
+      pos[i + 2] = (g.pos[i + 2] - cz) * scale;
+    }
+    const index = g.count > 65535 ? new Uint32Array(g.idx) : new Uint16Array(g.idx);
+    const uv = new Float32Array(g.count * 2);
+    return {
+      role: role,
+      color: g.color,
+      position: b64(pos),
+      normal: b64(new Float32Array(g.norm)),
+      uv: b64(uv),
+      indexType: index.BYTES_PER_ELEMENT === 4 ? 5125 : 5123,
+      index: b64(index)
+    };
+  });
+  return {
+    parts: parts,
+    bounds: {
+      min: [(bounds.min[0] - cx) * scale, 0, (bounds.min[2] - cz) * scale],
+      max: [(bounds.max[0] - cx) * scale, targetHeight, (bounds.max[2] - cz) * scale]
+    }
+  };
+}
+
 // Tiny replacement geometry so baked animated characters still show up in the
 // editor's model list, footprint math and static fallbacks. The runtime swaps
 // this marker for the real skinned GLB when the asset kind is "character".
@@ -345,6 +446,14 @@ function main() {
       }
     };
   });
+
+  // Static low-poly F-16 Barak. Baked without a texture atlas so the flat PSX
+  // material colours and Star-of-David roundels survive in the offline build.
+  const jetSource = path.join(creatureDir, 'f16_barak.glb');
+  if (fs.existsSync(jetSource)) {
+    models.f16 = bakeStaticProp(readGLB(jetSource), 4.6);
+    models.f16.source = 'Israeli F-16 Barak (PSX)';
+  }
 
   const body = '/* Generated by tools/import-downloaded-assets.js - local user assets. */\n' +
     '(function () {\n  \'use strict\';\n  const CC = window.CC = window.CC || {};\n' +

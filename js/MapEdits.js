@@ -7,7 +7,7 @@
   CC.mapEdits = {
     "version": 1,
     "generated": null,
-    "active": false,
+    "active": true,
     "newMap": false,
     "mapName": null,
     "world": null,
@@ -18,7 +18,53 @@
     "buildings": null,
     "landmarks": null,
     "challenges": null,
-    "assets": [],
+    "assets": [
+      {
+        "id": "f16_barak_1",
+        "type": "model",
+        "model": "f16",
+        "name": "F-16 Barak #1",
+        "description": "Israeli Air Force F-16C Barak on the south apron",
+        "x": -15,
+        "z": -344,
+        "y": 0,
+        "scale": 0.55,
+        "rot": 0,
+        "w": 7.5,
+        "l": 10.7,
+        "h": 2.5
+      },
+      {
+        "id": "f16_barak_2",
+        "type": "model",
+        "model": "f16",
+        "name": "F-16 Barak #2",
+        "description": "Israeli Air Force F-16C Barak on the south apron",
+        "x": 20,
+        "z": -344,
+        "y": 0,
+        "scale": 0.55,
+        "rot": 0,
+        "w": 7.5,
+        "l": 10.7,
+        "h": 2.5
+      },
+      {
+        "id": "f16_barak_3",
+        "type": "model",
+        "model": "f16",
+        "name": "F-16 Barak #3",
+        "description": "Israeli Air Force F-16C Barak on the south apron",
+        "x": 55,
+        "z": -344,
+        "y": 0,
+        "scale": 0.55,
+        "rot": 0,
+        "w": 7.5,
+        "l": 10.7,
+        "h": 2.5
+      }
+    ],
     "trailerShots": []
   };
 })();
