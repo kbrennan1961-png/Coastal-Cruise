@@ -828,6 +828,8 @@
     if (!Game.fpvActive) {
       const msg = $('fpvMessage');
       if (msg) msg.classList.remove('show');
+      const alert = $('fpvBatteryAlert');
+      if (alert) alert.classList.add('hidden');
       Game.fpvMessageTimer = 0;
     }
   }
@@ -1256,6 +1258,23 @@
   }
   Game.toggleOnFoot = toggleOnFoot;
 
+  // Camera cycling for keyboard and gamepad. On foot the Hood view would put
+  // the lens inside the baked redneck model, so skip it while walking.
+  function cycleCamera() {
+    const active = Game.vehicles[Game.activeKey];
+    // The drone has one view: first-person goggles with telemetry. Camera
+    // cycling must never imply a chase or hood mode while it is equipped.
+    if (active && active.isFpv && Game.fpvActive) return;
+    let nextMode = (Game.camMode + 1) % Game.camModes.length;
+    if (active && active.isPedestrian && nextMode === 1) {
+      nextMode = (nextMode + 1) % Game.camModes.length;
+    }
+    Game.camMode = nextMode;
+    const camEl = $('camMode');
+    if (camEl) camEl.textContent = Game.camModes[nextMode];
+    toast('Camera: ' + Game.camModes[nextMode], 1.4);
+  }
+
   function updateMusicButton() {
     const btn = $('musicBtn');
     if (!btn || !Audio) return;
@@ -1528,10 +1547,7 @@
       if (k === 'p') toggleSettings();
       if (k === 'q' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); returnToMenu(); }
       if (k === 'v') cycleWeather();
-      if (k === 'c') {
-        Game.camMode = (Game.camMode + 1) % Game.camModes.length;
-        toast('Camera: ' + Game.camModes[Game.camMode], 1.4);
-      }
+      if (k === 'c') cycleCamera();
       if (k === 'r') {
         Game.vehicles[Game.activeKey].reset(CC.World);
         toast('Vehicle reset', 1.2);
@@ -1750,10 +1766,7 @@
     if (pad.radio) Audio.cycleStation(1);
     if (pad.horn) Game.horn();
     if (pad.exit) toggleOnFoot();
-    if (pad.camera) {
-      Game.camMode = (Game.camMode + 1) % Game.camModes.length;
-      toast('Camera: ' + Game.camModes[Game.camMode], 1.4);
-    }
+    if (pad.camera) cycleCamera();
     if (pad.reset) {
       Game.vehicles[Game.activeKey].reset(CC.World);
       toast('Vehicle reset', 1.2);
@@ -1820,6 +1833,11 @@
     const old = Game.vehicles[Game.activeKey];
     const next = Game.vehicles[key];
     if (!next) return false;
+    // When the goggles come off, the pedestrian/car left at the launch point
+    // must disappear unless it is the vehicle we are returning to. Otherwise
+    // switching from FPV straight to another car leaves a duplicate bystander.
+    const fpvPilotEntity = old && old.isFpv && Game.fpvPilot
+      ? Game.vehicles[Game.fpvPilot.key] : null;
     let pose = { x: old.pos.x, z: old.pos.z, h: old.heading, s: old.speed * 0.7 };
     let usedSpawn = null;
     let fpvLaunch = null;
@@ -1895,9 +1913,11 @@
       next.setPose(pose.x, pose.z, pose.h, pose.s);
     }
     next.setVisible(true);
-    // Entering a ground vehicle always returns to the chase view, so the car
-    // or pedestrian stays on screen instead of vanishing behind a hood cam.
-    if (!next.isAircraft && old !== next && key !== 'pedestrian') Game.camMode = 0;
+    // Entering a ground vehicle or stepping back onto foot returns to the
+    // chase view, so the car or redneck stays on screen instead of vanishing
+    // behind a hood cam. On foot this is forced even when re-selecting the
+    // pedestrian, so a stale Hood/FPV mode can never hide the character.
+    if (next.isPedestrian || (!next.isAircraft && old !== next)) Game.camMode = 0;
     Game.activeKey = key;
     Game.activeAircraftSpawn = next.isAircraft ? usedSpawn : null;
     showAirportDisplays(Game.activeAircraftSpawn);
@@ -1911,9 +1931,19 @@
       if (old && old.isFpv) {
         old.spawnFlash = 0;
         old.setVisible(false);
+        if (fpvPilotEntity && fpvPilotEntity !== next) fpvPilotEntity.setVisible(false);
       }
       if (!fpvLaunch) Game.fpvPilot = null;
       setFpvMode(false, null);
+    }
+    // Leaving the goggles snaps the camera back behind the redneck instead of
+    // drifting from the drone's last position and looking past the model.
+    if (next.isPedestrian) {
+      setFpvMode(false, Game.vehicles.fpv);
+      Game.fpvPilot = null;
+      const camEl = $('camMode');
+      if (camEl) camEl.textContent = Game.camModes[Game.camMode];
+      updateCamera(0, next, {}, true);
     }
     // Keep the last *land* vehicle remembered so E returns to it after a trip.
     if (key !== 'pedestrian' && key !== 'boat' && !next.isAircraft) Game.lastVehicle = key;
@@ -2069,12 +2099,18 @@
 
     const hemi = new THREE.HemisphereLight(0xffe4bb, 0x5c7a4d, 0.85);
     scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd2a0, 2.05);
+    const sun = new THREE.DirectionalLight(0xffd39a, 2.05);
     sun.castShadow = false;
     scene.add(sun);
     scene.add(sun.target);
+    // Rose-violet bounce from the harbor cutscene keeps shadow sides warm but
+    // not flat; no shadows, so this is nearly free on the PS2-style renderer.
+    const fill = new THREE.DirectionalLight(0x8a6fb8, 0.28);
+    fill.position.set(50, 28, 60);
+    scene.add(fill);
     Game.sun = sun;
     Game.hemi = hemi;
+    Game.fill = fill;
     mark('scene/lighting');
     CC.Weather.init(scene, sun, hemi);
     CC.EnvironmentManager.init(scene, renderer);
@@ -2169,6 +2205,17 @@
     const speed = Math.abs(v.speed);
     const ped = !!v.isPedestrian;
     const flying = !!v.isAircraft;
+    // Defensive: an old Hood or FPV setting must never hide the on-foot
+    // character. Every pedestrian entry resets to Chase, but this also covers
+    // gamepad state or a direct camMode/fpvActive change.
+    if (ped) {
+      if (Game.camMode === 1) Game.camMode = 0;
+      if (Game.fpvActive) {
+        const drone = Game.vehicles.fpv;
+        setFpvMode(false, drone);
+        Game.fpvPilot = null;
+      }
+    }
     if (v.isFpv && Game.activeKey === v.key) {
       // Forward windshield-style view with the telemetry overlay on top. The
       // camera sits just ahead of the quad and looks along its heading, with a
@@ -2314,6 +2361,7 @@
 
   const FPV_GROUND_SAMPLES = [0, 0.5, 1];
   function fpvGroundHit(v) {
+    if (v.groundImpact) return true;
     const r = (v.radius || 1.1) * 0.7;
     for (let s = 0; s < FPV_GROUND_SAMPLES.length; s++) {
       const t = FPV_GROUND_SAMPLES[s];
@@ -2476,7 +2524,7 @@
       v.kills++;
       fpvPayKill();
       v.explode(world, 'KAMIKAZE STRIKE — UFO DESTROYED', { kamikaze: true });
-      Game.fpvMessage('UFO DESTROYED — +$5,000 — ' + v.kills +
+      Game.fpvMessage('CONFIRMED KILL — UFO — +$5,000 — ' + v.kills +
         (v.kills === 1 ? ' KILL' : ' KILLS'), 3.4);
       return;
     }
@@ -2485,7 +2533,7 @@
       v.kills++;
       fpvPayKill();
       v.explode(world, 'KAMIKAZE STRIKE — SHAHED DESTROYED', { kamikaze: true });
-      Game.fpvMessage('SHAHED-136 INTERCEPTED — +$5,000 — ' + v.kills +
+      Game.fpvMessage('CONFIRMED KILL — SHAHED-136 — +$5,000 — ' + v.kills +
         (v.kills === 1 ? ' KILL' : ' KILLS'), 3.2);
       return;
     }
@@ -2495,13 +2543,13 @@
       v.kills++;
       fpvPayKill();
       v.explode(world, 'KAMIKAZE STRIKE — ' + label + ' DESTROYED', { kamikaze: true });
-      Game.fpvMessage(label + ' INTERCEPTED — +$5,000 — ' + v.kills +
+      Game.fpvMessage('CONFIRMED KILL — ' + label + ' — +$5,000 — ' + v.kills +
         (v.kills === 1 ? ' KILL' : ' KILLS'), 3.2);
       return;
     }
-    if (fpvGroundHit(v) ||
-        (agl < 34 && fpvWorldHit(v, world)) ||
-        fpvPlayerHit(v, agl)) {
+    // Any collision with the map — ground, buildings, obstacles, props or the
+    // parked pilot vehicle — detonates the payload, at any altitude.
+    if (fpvGroundHit(v) || fpvWorldHit(v, world) || fpvPlayerHit(v, agl)) {
       v.explode(world, 'IMPACT — ' + (v.name || 'FPV'), { kamikaze: true });
     }
   }
@@ -2624,6 +2672,19 @@
     }
   }
 
+  // Six-digit GPS-style readout using the game's own X/Z coordinates, padded
+  // with leading zeroes. Negative map Z reads north, negative map X reads west.
+  function fpvSixDigitCoord(value, positive, negative) {
+    const n = String(Math.min(999999, Math.round(Math.abs(value)))).padStart(6, '0');
+    return n + (value < 0 ? negative : positive);
+  }
+
+  // 4S LiPo pack: 16.8 V at full charge down to 14.0 V at empty. The same
+  // percentage drives a green-to-red HSL ramp for the phone-style battery icon.
+  function fpvBatteryColor(pct) {
+    return 'hsl(' + Math.round(U.clamp(pct, 0, 100) * 1.2) + ', 92%, 55%)';
+  }
+
   function drawFpvHud(v) {
     const c = $('fpvHud');
     const overlay = $('fpvOverlay');
@@ -2718,15 +2779,12 @@
     g.stroke();
     g.restore();
 
-    // Fictional but stable map coordinates so the numbers move with the drone.
-    const W = C.WORLD;
-    const fx = U.clamp((v.pos.x - W.minX) / (W.maxX - W.minX), 0, 1);
-    const fz = U.clamp((v.pos.z - W.minZ) / (W.maxZ - W.minZ), 0, 1);
-    const lat = 34.09 - fz * 0.07;
-    const lon = -118.30 + fx * 0.12;
+    // Game-map coordinates, not real-world latitude/longitude. Each axis is
+    // shown as exactly six digits with leading zeroes plus its map hemisphere.
     const coords = $('fpvCoords');
     if (coords) {
-      coords.textContent = 'LAT ' + lat.toFixed(4) + ' N   LON ' + Math.abs(lon).toFixed(4) + ' W';
+      coords.textContent = 'LAT ' + fpvSixDigitCoord(v.pos.z, 'S', 'N') +
+        '   LON ' + fpvSixDigitCoord(v.pos.x, 'E', 'W');
     }
 
     const hx = v.home.x - v.pos.x, hz = v.home.z - v.pos.z;
@@ -2748,21 +2806,43 @@
     setText('fpvAlt', agl.toFixed(0) + ' m');
     setText('fpvSpd', Math.round(v.speed * 3.6) + ' km/h');
     setText('fpvName', v.name || 'NIGHT WASP');
-    const battery = Math.max(0, Math.ceil(v.battery));
-    const secondsLeft = Math.max(0, Math.round((v.battery / 100) * (v.spec.batterySeconds || 900)));
+    const pct = U.clamp(v.battery, 0, 100);
+    const battery = Math.ceil(pct);
+    const secondsLeft = Math.max(0, Math.round((pct / 100) * (v.spec.batterySeconds || 900)));
     const mm = Math.floor(secondsLeft / 60);
     const ss = String(secondsLeft % 60).padStart(2, '0');
-    const batteryEl = $('fpvBattery');
-    if (batteryEl) {
-      batteryEl.textContent = battery + '% · ' + mm + ':' + ss;
-      batteryEl.style.color = v.powerLoss || battery <= 5 ? '#ff6b6b' :
-        battery <= 20 ? '#ffd166' : '';
+    const voltage = 14 + (pct / 100) * 2.8;
+    const color = fpvBatteryColor(pct);
+    const batteryGroup = $('fpvBatteryGroup');
+    if (batteryGroup) batteryGroup.style.color = color;
+    const batteryFill = $('fpvBatteryFill');
+    if (batteryFill) {
+      batteryFill.style.width = pct.toFixed(1) + '%';
+      batteryFill.style.backgroundColor = color;
     }
+    const batteryEl = $('fpvBattery');
+    if (batteryEl) batteryEl.textContent = voltage.toFixed(1) + ' V · ' + mm + ':' + ss;
+
+    const batteryAlert = $('fpvBatteryAlert');
+    if (battery <= 20 && !v.lowBatteryWarned) {
+      v.lowBatteryWarned = true;
+      v.batteryAlertUntil = Game.time + 4;
+      Game.fpvMessage('battery low', 3.4);
+    } else if (battery > 25) {
+      v.lowBatteryWarned = false;
+      v.batteryAlertUntil = 0;
+    }
+    if (batteryAlert) {
+      batteryAlert.classList.toggle('hidden',
+        !(v.batteryAlertUntil && Game.time < v.batteryAlertUntil));
+    }
+
+    // The airframe is an acro quad. Its flight-mode readout never changes to
+    // jetpack or power-loss prose; the battery alert carries those warnings.
     const modeEl = $('fpvMode');
     if (modeEl) {
-      modeEl.textContent = v.powerLoss ? 'POWER LOSS — LAND OR FIND TARGET' :
-        battery <= 20 ? 'LOW BATTERY — RETURN TO PILOT' : 'FLIGHT MODE JETPACK';
-      modeEl.style.color = v.powerLoss || battery <= 20 ? '#ff6b6b' : '';
+      modeEl.textContent = 'ACRO';
+      modeEl.style.color = color;
     }
   }
 
@@ -3917,6 +3997,12 @@
     // Route through Game.readInput so scripted camera/trailer modes can supply
     // deterministic analog input without patching the game loop itself.
     const input = Game.readInput(pad, v);
+    // Mission planner overrides the already-read analog axes in place. Keep
+    // this immediately after Game.readInput(): scripted camera/trailer modes
+    // patch that function and must still see the raw player input first.
+    if (CC.MissionPlanner && CC.MissionPlanner.applyInput) {
+      CC.MissionPlanner.applyInput(input, v, dt);
+    }
     // During a struggle the movement keys are used to fight the officer, not
     // to walk away; the raw keys/pad axes are read by NPCSystem separately.
     if (CC.NPCSystem && CC.NPCSystem.arrest && CC.NPCSystem.arrest.active && v.isPedestrian) {

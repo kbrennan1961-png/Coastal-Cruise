@@ -25,17 +25,87 @@ html, body {
 
 button, input, select { font: inherit; color: inherit; }
 
+/* Application-style menu bar. Dropdowns invoke the same actions as the
+   toolbar buttons, so there is only one implementation of every command. */
+#menuBar {
+  height: 30px;
+  flex: 0 0 30px;
+  display: flex;
+  align-items: stretch;
+  background: #171d22;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 60;
+}
+.menu { position: relative; display: flex; align-items: stretch; }
+.menuTitle {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.menuTitle:hover, .menu.open > .menuTitle { background: #28313a; }
+.menuPopup {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  z-index: 70;
+}
+.menu.open .menuPopup { display: block; }
+.menuItem {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--text);
+}
+.menuItem:hover { background: #2c3944; }
+.menuItem .shortcut { margin-left: 24px; color: var(--muted); font-size: 11px; }
+.menuSep { height: 1px; background: var(--line); margin: 5px 4px; }
+
 #toolbar {
   height: 52px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 220px 0 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
   overflow-x: auto;
 }
+
+/* The view switch and Apply button live outside the scrolling toolbar. They
+   are pinned to the upper-right corner and keep their text labels at every
+   window width. */
+#viewToggleDock {
+  position: fixed;
+  top: 40px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#viewToggleDock button {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+#viewToggleDock button span { display: inline; }
 
 .brand {
   font-weight: 800;
@@ -71,8 +141,11 @@ button:disabled { opacity: 0.4; cursor: default; }
    each button's title tooltip; the icon + view controls stay visible. */
 #toolbar button span, .brand span { display: none; }
 #toolbar button { padding: 7px 8px; }
+/* Pan is a navigation tool, so keep its label visible next to the zoom controls. */
+#toolbar #panBtn span { display: inline; }
+#toolbar #panBtn { min-width: 68px; }
 
-main { display: flex; height: calc(100% - 52px - 28px); }
+main { display: flex; height: calc(100% - 30px - 52px - 28px); }
 
 #canvasWrap { position: relative; flex: 1; min-width: 0; background: #0d1216; }
 
@@ -187,7 +260,11 @@ output { display: inline-block; width: 34px; text-align: right; color: var(--tex
 }
 .modalCard p { margin: 0 0 12px; color: var(--muted); }
 .modalCard label { display: block; margin-bottom: 10px; color: var(--muted); }
-.modalButtons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.modalCard label.checkRow { display: flex; align-items: flex-start; gap: 8px; line-height: 1.35; }
+.modalCard label.checkRow input { margin-top: 2px; }
+.promptHint { font-size: 11px; line-height: 1.45; }
+.promptHint code, .modalCard p code { color: var(--accent); }
+.modalButtons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .wideCard { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; }
 #transformTools { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--line); }
 .shotList { max-height: 130px; overflow-y: auto; margin-bottom: 8px; }

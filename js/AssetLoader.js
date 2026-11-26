@@ -191,6 +191,23 @@
     geometry: geometry,
     paletteMaterial: paletteMaterial,
 
+    /* Runtime registration for models baked by the Blender prompt workflow.
+       The map editor calls this when a generated result JSON is imported, so
+       the new prop appears in the open session without a page reload. */
+    registerModels: function (models) {
+      if (!models) return false;
+      Object.keys(models).forEach(function (key) {
+        assets.models[key] = models[key];
+        if (CC.GeneratedAssets && CC.GeneratedAssets.models) {
+          CC.GeneratedAssets.models[key] = models[key];
+        }
+        if (CC.CustomModels && CC.CustomModels.models) {
+          CC.CustomModels.models[key] = models[key];
+        }
+      });
+      return true;
+    },
+
     footprint: function (name) {
       const model = CC.GeneratedAssets && CC.GeneratedAssets.models &&
         CC.GeneratedAssets.models[name] || assets.models[name];

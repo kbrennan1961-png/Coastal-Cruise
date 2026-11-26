@@ -1328,6 +1328,8 @@
       this.radius = this.spec.radius;
       this.battery = 100;
       this.powerLoss = false;
+      this.lowBatteryWarned = false;
+      this.batteryAlertUntil = 0;
       this.sats = 12;
       this.sortie = 0;
       this.kills = 0;
@@ -1351,6 +1353,7 @@
       this.vy = 0;
       this.speed = 0;
       this.velocity.set(0, 0, 0);
+      this.groundImpact = false;
       this.landCooldown = 0;
       this.powerLoss = false;
       this.syncMesh(0);
@@ -1399,6 +1402,8 @@
       }
       this.battery = 100;
       this.powerLoss = false;
+      this.lowBatteryWarned = false;
+      this.batteryAlertUntil = 0;
       this.state = 'ready';
       this.name = FPV_NAMES[Math.floor(Math.random() * FPV_NAMES.length)];
       if (world && world.particles) {
@@ -1410,6 +1415,8 @@
       this.sortie++;
       this.battery = 100;
       this.powerLoss = false;
+      this.lowBatteryWarned = false;
+      this.batteryAlertUntil = 0;
       this.sats = 11 + Math.floor(Math.random() * 5);
       this.name = FPV_NAMES[Math.floor(Math.random() * FPV_NAMES.length)];
     }
@@ -1426,6 +1433,7 @@
       }
 
       this.prevPos.copy(this.pos);
+      this.groundImpact = false;
       this.landCooldown = Math.max(0, (this.landCooldown || 0) - dt);
       const spec = this.spec;
       // 15-minute sortie. At empty the motors quit and the quad falls; the
@@ -1473,6 +1481,10 @@
       this.pos.y += this.vy * dt;
       const floor = CC.heightAt(this.pos.x, this.pos.z) + spec.minAltitude;
       if (this.pos.y < floor) {
+        // Record the impact before the clamp erases the vertical speed. A
+        // hard landing or a fast low pass detonates the explosive payload;
+        // a gentle hover at the minimum altitude stays safe.
+        if (this.vy < -2.5 || this.speed > 12) this.groundImpact = true;
         this.pos.y = floor;
         this.vy = Math.max(0, this.vy);
         this.velocity.x *= 0.94;
@@ -1540,17 +1552,19 @@
       const x = this.pos.x, y = this.pos.y, z = this.pos.z;
       if (world && world.createExplosion) {
         world.createExplosion(x, z, {
-          scale: kamikaze ? 12 : 5.5, y: y, duration: kamikaze ? 38 : 26
+          scale: kamikaze ? 16 : 5.5, y: y, duration: kamikaze ? 44 : 26
         });
         if (kamikaze) {
-          // Secondary fireballs and a tall smoke column make a deliberate
-          // kamikaze strike unmistakable from an ordinary crash.
-          world.createExplosion(x + 2.2, z - 1.6, { scale: 6, y: y + 1.5, duration: 30 });
-          world.createExplosion(x - 2.6, z + 2.1, { scale: 5, y: y + 0.8, duration: 28 });
+          // The airframe is packed with explosives: a huge primary fireball,
+          // two secondary blasts and a tall smoke column make every impact —
+          // target or terrain — unmistakable from an ordinary crash.
+          world.createExplosion(x + 2.6, z - 1.9, { scale: 9, y: y + 1.5, duration: 34 });
+          world.createExplosion(x - 3.0, z + 2.5, { scale: 8, y: y + 0.8, duration: 32 });
+          world.createExplosion(x + 0.7, z + 0.6, { scale: 7, y: y + 6, duration: 30 });
         }
       } else if (world && world.particles) {
-        world.particles.spawn(x, y, z, kamikaze ? 420 : 240, 0xffb347, kamikaze ? 10 : 6);
-        if (kamikaze) world.particles.spawn(x, y + 3, z, 180, 0x3a3b3c, 14);
+        world.particles.spawn(x, y, z, kamikaze ? 620 : 240, 0xffb347, kamikaze ? 12 : 6);
+        if (kamikaze) world.particles.spawn(x, y + 4, z, 260, 0x3a3b3c, 17);
       }
       if (CC.Game && CC.Game.fpvMessage) {
         CC.Game.fpvMessage(reason || 'DRONE DOWN', kamikaze ? 3.6 : 3);
@@ -1570,6 +1584,8 @@
       }
       this.battery = 100;
       this.powerLoss = false;
+      this.lowBatteryWarned = false;
+      this.batteryAlertUntil = 0;
       this.sats = 11 + Math.floor(Math.random() * 5);
       this.state = 'ready';
       this.landCooldown = 0;

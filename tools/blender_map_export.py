@@ -22,8 +22,9 @@ Object conventions (set as custom properties, prefix names also work):
   cc_type = challenge Empty; same convention as landmark.
 
 Scene custom properties: cc_trailer_shots holds JSON text for patch
-trailerShots, and cc_patch_meta holds JSON text for other patch metadata
-(world, mapWidth, mapHeight, newMap, gameName, standaloneGame, etc.).
+trailerShots, cc_missions holds JSON text for INAV flight plans, and
+cc_patch_meta holds JSON text for other patch metadata (world, mapWidth,
+mapHeight, newMap, gameName, standaloneGame, etc.).
 
 Coordinate mapping matches the game's glTF convention:
 
@@ -55,7 +56,7 @@ PREFIXES = (
 )
 
 DATA_KEYS = {'roads', 'buildings', 'assets', 'elevation', 'landmarks',
-             'challenges', 'trailerShots'}
+             'challenges', 'trailerShots', 'missions'}
 
 
 def prop(obj, name, default=None):
@@ -313,6 +314,9 @@ def main():
     trailer_text = prop(scene, 'cc_trailer_shots')
     if trailer_text is not None:
         data['trailerShots'] = json_value(trailer_text, [])
+    missions_text = prop(scene, 'cc_missions')
+    if missions_text is not None:
+        data['missions'] = json_value(missions_text, [])
     for key, value in json_object(prop(scene, 'cc_patch_meta'), {}).items():
         if key not in DATA_KEYS:
             data[key] = value

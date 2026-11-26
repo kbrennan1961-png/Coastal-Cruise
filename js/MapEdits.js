@@ -65,6 +65,7 @@
         "h": 2.5
       }
     ],
-    "trailerShots": []
+    "trailerShots": [],
+    "missions": []
   };
 })();

@@ -177,6 +177,68 @@
   const rng = CC.rng(20261120);
   const tmpMat = {};
 
+  /* Shared pixel textures for the approved Beacon harbor look. They are drawn
+     once from the same recipes as intro-cutscene.html, so the fish house, every
+     pier/jetty and the tin roofs use the exact chunky wood/tin/window palette
+     from the video. Nearest filtering keeps the PSX look at file:// too. */
+  const pixelTexCache = {};
+  function pixelTexture(key, w, h, paint) {
+    if (pixelTexCache[key]) return pixelTexCache[key];
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    paint(c.getContext('2d'), w, h);
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+    pixelTexCache[key] = tex;
+    return tex;
+  }
+  function pixelRand(seed) {
+    let s = seed >>> 0;
+    return function () {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+  function harborWoodTexture() {
+    return pixelTexture('harborWood', 64, 64, function (g, w, h) {
+      g.fillStyle = '#6d5138'; g.fillRect(0, 0, w, h);
+      const r = pixelRand(23);
+      for (let y = 0; y < h; y += 8) {
+        g.fillStyle = y % 16 === 0 ? '#5a402c' : '#7a5a3d';
+        g.fillRect(0, y, w, 7);
+        for (let i = 0; i < 8; i++) {
+          g.fillStyle = 'rgba(30,20,12,0.35)';
+          g.fillRect((r() * w) | 0, y + 1 + ((r() * 5) | 0), 1 + ((r() * 6) | 0), 1);
+        }
+      }
+    });
+  }
+  function harborTinTexture() {
+    return pixelTexture('harborTin', 64, 64, function (g, w, h) {
+      for (let x = 0; x < w; x += 4) {
+        g.fillStyle = x % 8 === 0 ? '#8e9294' : '#666c70';
+        g.fillRect(x, 0, 4, h);
+      }
+      const r = pixelRand(11);
+      for (let i = 0; i < 30; i++) {
+        g.fillStyle = 'rgba(120,70,40,0.25)';
+        g.fillRect((r() * w) | 0, (r() * h) | 0, 2 + ((r() * 4) | 0), 2);
+      }
+    });
+  }
+  function harborWindowTexture() {
+    return pixelTexture('harborWindow', 32, 32, function (g, w, h) {
+      g.fillStyle = '#3a2410'; g.fillRect(0, 0, w, h);
+      for (let y = 2; y < h; y += 8) for (let x = 2; x < w; x += 8) {
+        g.fillStyle = (x + y) % 16 === 4 ? '#ffcf72' : '#f39c3c';
+        g.fillRect(x, y, 6, 6);
+      }
+    });
+  }
+
   const CLS = { WATER: 1, GRASS: 2, ROAD: 3, BUILDING: 4, SAND: 5, FOREST: 6, MARSH: 7 };
 
   function mat(color, opts) {
@@ -2590,9 +2652,10 @@
     const pts = [];
     for (let z = z0; z < z1; z += 6) pts.push({ x: boardwalkX(z), z: z });
     pts.push({ x: boardwalkX(z1), z: z1 });
-    const deckMat = getMat('boardDeck', 0xa87b4c);
-    const plankMat = getMat('boardPlank', 0xc89b62);
-    const railMat = getMat('boardRail', 0xe6e1d2);
+    const woodTex = harborWoodTexture();
+    const deckMat = getMat('boardDeck', 0xa07d54, { map: woodTex });
+    const plankMat = getMat('boardPlank', 0xa07d54, { map: woodTex });
+    const railMat = getMat('boardRail', 0xe6d9a8);
     const plankXf = [];
     const dummy = new THREE.Object3D();
     const pierLo = PIER_Z - PIER_MOUTH_HALF, pierHi = PIER_Z + PIER_MOUTH_HALF;
@@ -2972,9 +3035,10 @@
     const deckY = 1.15;
     const x0 = boardwalkX(PIER_Z) + 2;
     const x1 = Math.max(C.WORLD.minX + 5, x0 - PIER_LENGTH);
-    const deckMat = getMat('pierDeck', 0xa87b4c);
-    const plankMat = getMat('pierPlank', 0xc89b62);
-    const railMat = getMat('pierRail', 0xe6e1d2);
+    const woodTex = harborWoodTexture();
+    const deckMat = getMat('pierDeck', 0xa07d54, { map: woodTex });
+    const plankMat = getMat('pierPlank', 0xa07d54, { map: woodTex });
+    const railMat = getMat('pierRail', 0xe6d9a8);
     const planks = [];
     const dummy = new THREE.Object3D();
     for (let x = x0; x > x1; x -= 6) {
@@ -2995,7 +3059,7 @@
     for (let x = x0; x >= x1; x -= 8) {
       [-4.2, 4.2].forEach(function (oz) {
         beamBetween(g, x, -2.6, PIER_Z + oz, x, deckY - 0.1, PIER_Z + oz, 0.24,
-          getMat('pierPiling', 0x6a4d35));
+          getMat('pierPiling', 0x6d5138, { map: woodTex }));
       });
       [-4.8, 4.8].forEach(function (oz) {
         beamBetween(g, x, deckY + 0.7, PIER_Z + oz, Math.max(x1, x - 8), deckY + 0.7, PIER_Z + oz, 0.075, railMat);
@@ -3014,7 +3078,7 @@
     for (let x = x0 - 18; x > x1; x -= 26) {
       const lampZ = PIER_Z - 4.1;
       beamBetween(g, x, deckY + 1.8, lampZ, x, deckY + 5.2, lampZ, 0.11, railMat);
-      g.add(box(0.8, 0.22, 0.55, getMat('pierLamp', 0xffe6a6, { emissive: 0xffcf6b }), x, deckY + 5.3, lampZ));
+      g.add(box(0.8, 0.22, 0.55, beaconBasic('pierLamp', 0xffd98a), x, deckY + 5.3, lampZ));
     }
     // Wide fishing platform at the end, with a cleaning table and bench.
     g.add(box(12, 0.45, 16, deckMat, x1 + 3, deckY, PIER_Z));
@@ -3247,10 +3311,11 @@
   /* ---------- small jetties along the beach ---------- */
   function buildJetties(scene) {
     const shoreAt = CC.coast && CC.coast.westLine ? CC.coast.westLine : function () { return -300; };
-    const wood = getMat('jettyWood', 0xa87b4e);
-    const post = getMat('jettyPost', 0x6d5842);
-    const capMat = getMat('jettyCap', 0xe8e2cf);
-    const lampMat = getMat('jettyLamp', 0xffe6a6, { emissive: 0xffcf6b });
+    const woodTex = harborWoodTexture();
+    const wood = getMat('jettyWood', 0xa07d54, { map: woodTex });
+    const post = getMat('jettyPost', 0x6d5138, { map: woodTex });
+    const capMat = getMat('jettyCap', 0xe6d9a8);
+    const lampMat = beaconBasic('jettyLamp', 0xffd98a);
     [-180, -125, 250, 310].forEach(function (z, i) {
       const shore = shoreAt(z);
       const length = i % 2 ? 22 : 28;
@@ -5428,208 +5493,329 @@
     serviceDone(site);
   }
 
+  // Pixel-art materials shared by the PSX-style Beacon Seafood rebuild. The
+  // textures themselves come from the harbor-wide cache above so every dock in
+  // the game uses the same cutscene wood, tin and warm window palette.
+  function beaconTexture(key, w, h, paint) {
+    return pixelTexture('beacon:' + key, w, h, paint);
+  }
+  function beaconRand(seed) { return pixelRand(seed); }
+  function beaconBasic(key, color, opts) {
+    const cacheKey = 'beaconBasic:' + key;
+    if (!tmpMat[cacheKey]) {
+      tmpMat[cacheKey] = new THREE.MeshBasicMaterial(
+        Object.assign({ color: color, fog: true }, opts || {}));
+      tmpMat[cacheKey].name = key;
+    }
+    return tmpMat[cacheKey];
+  }
+
   function buildBeaconSeafood() {
     const site = serviceSite('beaconSeafood');
     if (!site) return;
     const g = site.g, q = site.q;
-    servicePad(g, q.w - 3, q.h - 3, 0x9d9280, 0.06);
-    const wood = getMat('fishWood', 0x9b7450);
-    const plank = getMat('fishPlank', 0xb08a61);
-    const post = getMat('fishPost', 0x6d513b);
-    const roof = getMat('fishRoof', 0x5c5049);
-    g.add(box(32, 6, 15, wood, 0, 3, -7));
-    g.add(box(34, 0.6, 17, roof, 0, 6.3, -7));
-    const beaconSign = addShopSign(g, 'BEACON SEAFOOD', 20, 3.2,
-      0x245a70, 0xf5f1df, 0, 7.8, 1.2, 0);
-    beaconSign.name = 'Beacon Seafood sign';
-    for (let x = -14; x <= 14; x += 7) {
-      g.add(box(2.4, 2, 0.16, getMat('fishWindow', 0x9fc4cd, { emissive: 0x183541 }),
-        x, 3.8, 0.55));
-    }
-    serviceObstacle(site, 0, -7, 17);
-
     const bx = q.x, bz = q.z;
-    const bldHw = 16, bldHh = 7.5;
-    const platformY = CC.heightAt(bx, bz) + 0.62;
-    const deckMat = getMat('beaconPlatformWood', 0xa07a54);
-    const railMat = getMat('beaconPlatformRail', 0x7a5d43);
-    const postMat = getMat('beaconDockPost', 0x6d513b);
+    const groundY = g.position.y;
+    const waterY = C.SEA_LEVEL - groundY;
+    const deckY = waterY + 1.05;
+    g.name = 'Beacon Seafood PSX fish house';
 
-    function deckSlab(cx, cz, w, d, posts) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.24, d), deckMat);
-      m.position.set(cx, platformY, cz);
-      m.receiveShadow = true; m.castShadow = true;
-      serviceScene.add(m);
-      if (posts !== false) {
-        for (let px = cx - w / 2 + 0.8; px <= cx + w / 2 - 0.4; px += 3.0) {
-          for (let pz = cz - d / 2 + 0.8; pz <= cz + d / 2 - 0.4; pz += 3.0) {
-            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 1.3, 6), postMat);
-            post.position.set(px, platformY - 0.75, pz);
-            serviceScene.add(post);
-          }
-        }
+    /* ---------- cutscene pixel textures ---------- */
+    const woodTex = harborWoodTexture();
+    const tinTex = harborTinTexture();
+    const windowTex = harborWindowTexture();
+    const signTex = beaconTexture('beaconSign', 256, 64, function (g2, w, h) {
+      g2.fillStyle = '#4a3a26'; g2.fillRect(0, 0, w, h);
+      g2.strokeStyle = '#2a1f14'; g2.lineWidth = 6; g2.strokeRect(3, 3, w - 6, h - 6);
+      g2.fillStyle = '#f4d38a';
+      g2.font = 'bold 30px "Courier New", monospace';
+      g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.fillText('BEACON SEAFOOD', w / 2, h / 2 + 2);
+      const r = beaconRand(41);
+      for (let i = 0; i < 40; i++) {
+        g2.fillStyle = 'rgba(74,58,38,0.8)';
+        g2.fillRect((r() * w) | 0, (r() * h) | 0, 2 + ((r() * 4) | 0), 2);
       }
+    });
+
+    /* ---------- shared PSX materials ---------- */
+    const wallMat = getMat('beaconWallWood', 0xb08a60, { map: woodTex, side: THREE.DoubleSide });
+    const darkWood = getMat('beaconDarkWood', 0x6d5138, { map: woodTex });
+    const plankMat = getMat('beaconDockPlank', 0xa07d54, { map: woodTex });
+    const tinMat = getMat('beaconTinRoof', 0xc0c4c6, { map: tinTex, side: THREE.DoubleSide });
+    const rustMat = getMat('beaconRust', 0x8a5236);
+    const metalMat = getMat('beaconMetal', 0x5b6166);
+    const potMat = getMat('beaconCrabPot', 0x6b6a52);
+    const glowMat = beaconBasic('beaconWindowGlow', 0xffc25a, { map: windowTex });
+    const signMat = beaconBasic('beaconSignFace', 0xffffff, { map: signTex, side: THREE.DoubleSide });
+    const lampMat = beaconBasic('beaconDeckLamp', 0xffd98a);
+    const asphaltMat = getMat('beaconAsphalt', 0x3b3d3e);
+    const lineMat = beaconBasic('beaconLotLine', 0xe6d9a8);
+    const headMat = beaconBasic('beaconCarHead', 0xffe7a8);
+    const tailMat = beaconBasic('beaconCarTail', 0xb8352c);
+    const tireMat = getMat('beaconCarTire', 0x242629);
+    const glassMat = getMat('beaconCarGlass', 0x3c5b68);
+
+    function part(parent, w, h, d, material, x, y, z) {
+      const m = box(w, h, d, material, x, y, z);
+      parent.add(m);
+      return m;
     }
-    function railLine(x0, z0, x1, z1) {
-      beamBetween(serviceScene, x0, platformY + 0.12, z0, x1, platformY + 0.12, z1, 0.08, railMat);
-      beamBetween(serviceScene, x0, platformY + 0.95, z0, x1, platformY + 0.95, z1, 0.06, railMat);
-      const len = Math.hypot(x1 - x0, z1 - z0) || 1;
-      const steps = Math.max(1, Math.floor(len / 2.4));
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = U.lerp(x0, x1, t), z = U.lerp(z0, z1, t);
-        beamBetween(serviceScene, x, platformY + 0.12, z, x, platformY + 0.95, z, 0.05, railMat);
-      }
+
+    /* ---------- fish house, mirrored so the water is on +Z ---------- */
+    const house = new THREE.Group();
+    house.name = 'Beacon Seafood fish house';
+    g.add(house);
+    const houseZ = -7, houseW = 30, houseD = 13;
+    part(house, houseW, 6.2, houseD, wallMat, 0, 3.5, houseZ);
+
+    const roofL = part(house, 16.5, 0.35, 14.5, tinMat, -7.5, 7.7, houseZ);
+    roofL.rotation.z = 0.36;
+    const roofR = part(house, 16.5, 0.35, 14.5, tinMat, 7.5, 7.7, houseZ);
+    roofR.rotation.z = -0.36;
+
+    [houseZ - houseD / 2, houseZ + houseD / 2].forEach(function (z) {
+      const gable = new THREE.BufferGeometry();
+      gable.setAttribute('position', new THREE.Float32BufferAttribute([
+        -15, 6.6, z, 15, 6.6, z, 0, 10.6, z
+      ], 3));
+      gable.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0.5, 1], 2));
+      gable.computeVertexNormals();
+      house.add(new THREE.Mesh(gable, wallMat));
+    });
+
+    [-10, -3.3, 3.3, 10].forEach(function (x) {
+      part(house, 2.5, 2.2, 0.16, glowMat, x, 3.8, houseZ + houseD / 2 + 0.1);
+      part(house, 2.5, 2.2, 0.16, glowMat, x, 3.8, houseZ - houseD / 2 - 0.1);
+    });
+    [-10.5, -3.5].forEach(function (z) {
+      part(house, 0.16, 2.2, 2.5, glowMat, houseW / 2 + 0.1, 3.8, houseZ + z);
+      part(house, 0.16, 2.2, 2.5, glowMat, -houseW / 2 - 0.1, 3.8, houseZ + z);
+    });
+
+    const frontSign = new THREE.Mesh(new THREE.PlaneGeometry(12, 2.8), signMat);
+    frontSign.name = 'Beacon Seafood sign';
+    frontSign.position.set(0, 7.4, houseZ + houseD / 2 + 0.12);
+    house.add(frontSign);
+    const backSign = new THREE.Mesh(new THREE.PlaneGeometry(12, 2.8), signMat);
+    backSign.name = 'Beacon Seafood sign';
+    backSign.position.set(0, 7.4, houseZ - houseD / 2 - 0.12);
+    backSign.rotation.y = Math.PI;
+    house.add(backSign);
+
+    // Crab pots and drums stacked beside the land-facing door.
+    const propRand = beaconRand(57);
+    [[-12.5, 0.4, -2], [-12.5, 0.4, 0], [-12.5, 0.4, 2],
+     [-12.5, 1.2, -1], [-12.5, 1.2, 1], [12.5, 0.4, -2], [12.5, 0.4, 0]
+    ].forEach(function (p) {
+      const pot = part(house, 1.8, 0.8, 1.5, potMat, p[0], p[1], houseZ + p[2]);
+      pot.rotation.y = (propRand() - 0.5) * 0.3;
+    });
+    [[-11.5, 0.75, 5.5], [-9.8, 0.75, 5.8], [11.6, 0.75, 5.3]].forEach(function (p) {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.5, 7), rustMat);
+      barrel.position.set(p[0], p[1], houseZ + p[2]);
+      house.add(barrel);
+    });
+
+    serviceObstacle(site, 0, houseZ, 17);
+
+    /* ---------- U-shaped commercial dock wrapped around the water side ---------- */
+    const dock = new THREE.Group();
+    dock.name = 'Beacon Seafood U-shaped dock';
+    g.add(dock);
+    part(dock, 34, 0.4, 6, plankMat, 0, deckY, 3.5);     // wharf along the shop
+    part(dock, 5, 0.4, 28, plankMat, -14, deckY, 16);    // port walkway
+    part(dock, 5, 0.4, 28, plankMat, 14, deckY, 16);     // starboard walkway
+    part(dock, 33, 0.4, 4, plankMat, 0, deckY, 28);      // outer cross dock
+    part(dock, 3, 0.4, 18, plankMat, -7, deckY, 38);     // port finger
+    part(dock, 3, 0.4, 18, plankMat, 7, deckY, 38);      // starboard finger
+
+    function dockPile(x, z) {
+      const pile = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 2.2, 6), darkWood);
+      pile.position.set(x, waterY + 0.35, z);
+      dock.add(pile);
+    }
+    for (let px = -16; px <= 16; px += 4) dockPile(px, 6.5);
+    [-2, 4, 10, 16, 22, 28].forEach(function (z) {
+      dockPile(-16.2, z); dockPile(-11.8, z);
+      dockPile(11.8, z); dockPile(16.2, z);
+    });
+    [-8.5, -5.5, 5.5, 8.5].forEach(function (x) {
+      [29, 34, 39, 44].forEach(function (z) { dockPile(x, z); });
+    });
+    Details.riverDocks += 4;
+    Details.beaconDockEnds = [{ x: bx - 7, z: bz + 47 }, { x: bx + 7, z: bz + 47 }];
+
+    /* ---------- blocky shrimp trawlers, same silhouette as the cutscene ---------- */
+    function makeTrawler(color) {
+      const boat = new THREE.Group();
+      const hullMat = getMat('beaconTrawlerHull' + color, color,
+        { flatShading: true, side: THREE.DoubleSide });
+      const deckMat = getMat('beaconTrawlerDeck', 0x8a7048, { map: woodTex });
+      const cabinMat = getMat('beaconTrawlerCabin', 0xd8d6c8);
+
+      part(boat, 4.4, 1.8, 12, hullMat, 0, 0.9, 0);
+      const bow = new THREE.BufferGeometry();
+      bow.setAttribute('position', new THREE.Float32BufferAttribute([
+        -2.2, 0, 6, 2.2, 0, 6, 0, 0, 9.5,
+        -2.2, 1.8, 6, 2.2, 1.8, 6, 0, 1.8, 9.5
+      ], 3));
+      bow.setIndex([0, 1, 2, 3, 5, 4, 0, 3, 4, 0, 4, 1,
+                    1, 4, 5, 1, 5, 2, 2, 5, 3, 2, 3, 0]);
+      bow.computeVertexNormals();
+      boat.add(new THREE.Mesh(bow, hullMat));
+
+      part(boat, 4.0, 0.2, 11, deckMat, 0, 1.85, 0);
+      part(boat, 3.2, 2.6, 3.4, cabinMat, 0, 3.2, -2.2);
+      part(boat, 3.6, 0.25, 3.8, hullMat, 0, 4.6, -2.2);
+      [-1.1, 0, 1.1].forEach(function (wx) {
+        part(boat, 0.85, 0.9, 0.1, glowMat, wx, 3.5, -0.42);
+      });
+      part(boat, 0.16, 5.5, 0.16, metalMat, 0, 4.6, 1.5);
+      [-1, 1].forEach(function (side) {
+        const outrigger = part(boat, 0.12, 0.12, 9, metalMat, side * 3.6, 3.6, 2.0);
+        outrigger.rotation.x = -0.18;
+        [[0, 6.8, 1.5, side * 3.6, 3.6, -1.5],
+         [0, 6.8, 1.5, side * 3.6, 3.6, 6.5]].forEach(function (seg) {
+          beamBetween(boat, seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], 0.035, darkWood);
+        });
+      });
+      [[-1.8, 2.4, 4], [1.8, 2.4, 4], [0, 2.4, -5]].forEach(function (p) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 4), lampMat);
+        lamp.position.set(p[0], p[1], p[2]);
+        boat.add(lamp);
+      });
+      [[-1.1, 2.25, 2.6], [1.1, 2.25, 2.6], [0, 2.95, 2.6]].forEach(function (p) {
+        part(boat, 1.2, 0.55, 1.1, potMat, p[0], p[1], p[2]);
+      });
+      const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 1.6, 8), metalMat);
+      reel.rotation.z = Math.PI / 2;
+      reel.position.set(0, 2.5, -4.4);
+      boat.add(reel);
+      return boat;
     }
 
-    // Walkable wooden platform all around building.
-    const pW = 3.0;
-    deckSlab(bx, bz - bldHh - pW / 2, bldHw * 2 + pW * 2, pW); // north/back
-    deckSlab(bx, bz + bldHh + pW / 2, bldHw * 2 + pW * 2, pW); // south/front
-    deckSlab(bx - bldHw - pW / 2, bz, pW, bldHh * 2); // west
-    deckSlab(bx + bldHw + pW / 2, bz, pW, bldHh * 2); // east
-    // outer rails except dock side openings
-    railLine(bx - bldHw - pW, bz - bldHh - pW, bx + bldHw + pW, bz - bldHh - pW); // back
-    railLine(bx - bldHw - pW, bz - bldHh - pW, bx - bldHw - pW, bz + bldHh + pW); // left
-    railLine(bx + bldHw + pW, bz - bldHh - pW, bx + bldHw + pW, bz + bldHh + pW); // right
-    // front rail with openings for dock connectors
-    railLine(bx - bldHw - pW, bz + bldHh + pW, bx - 15, bz + bldHh + pW);
-    railLine(bx - 11, bz + bldHh + pW, bx - 3, bz + bldHh + pW);
-    railLine(bx + 3, bz + bldHh + pW, bx + 11, bz + bldHh + pW);
-    railLine(bx + 15, bz + bldHh + pW, bx + bldHw + pW, bz + bldHh + pW);
+    [
+      { x: -9.5, z: 38, yaw: Math.PI + 0.05, color: 0x2f5d66, label: 'port finger trawler' },
+      { x: 9.5, z: 38, yaw: Math.PI - 0.05, color: 0x7a4038, label: 'starboard finger trawler' },
+      { x: -19, z: 16, yaw: Math.PI + 0.03, color: 0x3f5a75, label: 'port side trawler' },
+      { x: 19, z: 16, yaw: Math.PI - 0.03, color: 0xc0a45c, label: 'starboard workboat' }
+    ].forEach(function (spec) {
+      const boat = makeTrawler(spec.color);
+      boat.name = 'Beacon Seafood ' + spec.label;
+      boat.position.set(spec.x, waterY + 0.4, spec.z);
+      boat.rotation.y = spec.yaw;
+      g.add(boat);
+    });
+    Details.fishingBoats += 4;
 
-    // Docks connected to the front platform, extending toward/into water.
-    const dockXs = [-22, -8, 8, 22];
-    dockXs.forEach(function (dx) {
-      let dockEndZ = bz + bldHh + pW;
-      for (let z = bz + bldHh + pW + 2; z <= bz + 54; z += 4) {
-        const wx = bx + dx, wz = z;
-        deckSlab(wx, wz, 4.0, 4.1);
-        dockEndZ = z;
-        if (CC.coast.isWater(wx, wz) && CC.coast.riverDepth(wx, wz) > 4.5) {
-          // extend a little further into deeper water for mooring, then stop
-          for (let zz = z + 4; zz <= z + 12; zz += 4) {
-            if (!CC.coast.isWater(wx, zz)) break;
-            deckSlab(wx, zz, 4.0, 4.1);
-            dockEndZ = zz;
-          }
-          break;
-        }
+    /* ---------- game-style parking lot with parked cars ---------- */
+    const lot = new THREE.Group();
+    lot.name = 'Beacon Seafood parking lot';
+    g.add(lot);
+    const lotCx = 18, lotCz = -52, lotW = 46, lotD = 30;
+    part(lot, lotW, 0.08, lotD, asphaltMat, lotCx, 0.08, lotCz);
+    part(lot, 12, 0.06, 24, asphaltMat, lotCx, 0.06, lotCz - 28);
+    const spotXs = [];
+    for (let x = lotCx - 18; x <= lotCx + 18; x += 6) spotXs.push(x);
+    spotXs.forEach(function (x) {
+      part(lot, 0.18, 0.03, 5, lineMat, x, 0.15, -44);
+      part(lot, 0.18, 0.03, 5, lineMat, x, 0.15, -60);
+    });
+
+    const parkSpots = []
+      .concat(spotXs.map(function (x) { return { x: x, z: -60, h: 0 }; }))
+      .concat(spotXs.map(function (x) { return { x: x, z: -44, h: Math.PI }; }));
+
+    const carPalette = [0xb23b35, 0x2e5d8f, 0xd6c7a1, 0x4c6b46,
+                        0x8d8d92, 0xe0d9c8, 0x2b2b2f, 0xd8a13a];
+    const carKinds = ['car', 'coupe', 'compact', 'truck'];
+
+    function fallbackParkedCar(color, truck) {
+      const grp = new THREE.Group();
+      const bodyMat = getMat('beaconParkedBody' + color, color);
+      const len = truck ? 5 : 4.2;
+      part(grp, 2.2, 0.72, len, bodyMat, 0, 0.72, 0);
+      part(grp, 1.94, 0.72, truck ? 1.8 : 2, bodyMat, 0, 1.42, truck ? 0.9 : -0.2);
+      part(grp, 1.98, 0.42, truck ? 1.9 : 2.1, glassMat, 0, 1.46, truck ? 0.9 : -0.2);
+      [-1.12, 1.12].forEach(function (wx) {
+        [-1.4, 1.4].forEach(function (wz) {
+          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.22, 7), tireMat);
+          wheel.rotation.z = Math.PI / 2;
+          wheel.position.set(wx, 0.32, wz);
+          grp.add(wheel);
+        });
+      });
+      [-0.72, 0.72].forEach(function (hx) {
+        part(grp, 0.34, 0.18, 0.08, headMat, hx, 0.78, len / 2 + 0.04);
+        part(grp, 0.34, 0.16, 0.08, tailMat, hx, 0.78, -len / 2 - 0.04);
+      });
+      return { group: grp, spec: { wheelRadius: truck ? 0.55 : 0.42 } };
+    }
+
+    let parkedCars = 0;
+    parkSpots.forEach(function (spot, i) {
+      // Leave two stalls open so the customer's car still has somewhere to park.
+      if (i === 2 || i === 9) return;
+      const color = carPalette[i % carPalette.length];
+      const kind = carKinds[i % carKinds.length];
+      let car = null;
+      if (CC.VehicleFactory && CC.VehicleFactory.build && CC.vehicleSpecs[kind]) {
+        car = CC.VehicleFactory.build(kind, color);
+        (car.beams || []).forEach(function (beam) { beam.visible = false; });
       }
-      // side rails on docks
-      railLine(bx + dx - 2, bz + bldHh + pW, bx + dx - 2, dockEndZ + 2);
-      railLine(bx + dx + 2, bz + bldHh + pW, bx + dx + 2, dockEndZ + 2);
-      // end rail
-      railLine(bx + dx - 2, dockEndZ + 2, bx + dx + 2, dockEndZ + 2);
-      Details.riverDocks++;
-      Details.beaconDockEnds = Details.beaconDockEnds || [];
-      Details.beaconDockEnds.push({ x: bx + dx, z: dockEndZ + 2 });
+      if (!car || !car.group) car = fallbackParkedCar(color, kind === 'truck');
+      car.group.name = 'Beacon parked car ' + (parkedCars + 1);
+      const wy = CC.heightAt(bx + spot.x, bz + spot.z);
+      car.group.position.set(spot.x, wy - groundY + car.spec.wheelRadius, spot.z);
+      car.group.rotation.y = spot.h;
+      lot.add(car.group);
+      parkedCars++;
     });
-    Details.beaconPierEndZ = bz + 56;
+    Details.beaconStaticCars = parkedCars;
+    Details.beaconParkingLot = { x: bx + lotCx, z: bz + lotCz, w: lotW, h: lotD };
+    Details.beaconTrawlers = 4;
 
-    // Crab traps, nets and gear on platform.
-    [-16, 0, 16].forEach(function (dx) {
-      g.add(box(1.6, 0.9, 1.6, getMat('crabTrap', 0x6f6a57), dx, 1.05, 14));
-      beamBetween(g, dx, 1.5, 14, dx, 0.7, 17, 0.04, getMat('fishRope', 0xd9cfae));
-    });
-
-    // Several large fishing trawlers tied up at Beacon Seafood docks.
-    const trawlerDockX = dockXs;
-    const trawlerColors = [0xc6533a, 0x3f7ea0, 0x6d8b4b, 0xd1a04a, 0x7f5b8c];
-    trawlerDockX.forEach(function (dx, i) {
-      const dockEnd = (Details.beaconDockEnds && Details.beaconDockEnds[i] && Details.beaconDockEnds[i].z) || (bz + 52);
-      const tx = bx + dx;
-      let tz = dockEnd + 8;
-      for (let k = 0; k < 20; k++) {
-        if (CC.coast.isWater(tx, tz) && CC.coast.riverDepth(tx, tz) > 2.5) break;
-        tz += 2;
-      }
-      if (!CC.coast.isWater(tx, tz)) return;
-      const trawler = makeFishingTrawler(trawlerColors[i % trawlerColors.length], 0xb8a98a);
-      trawler.scale.set(1.2, 1.2, 1.2);
-      trawler.position.set(tx, C.SEA_LEVEL + 0.25, tz);
-      trawler.rotation.y = (i % 2 ? 0.08 : -0.08);
-      serviceScene.add(trawler);
-      Details.fishingBoats++;
-      // mooring line to dock
-      beamBetween(serviceScene, tx - 1.4, C.SEA_LEVEL + 1.2, tz - 5.5, tx - 1.8, platformY + 0.2, dockEnd - 1.2, 0.03, getMat('moorRope', 0xd8ccb2));
-    });
-    // Additional small boats tied up.
-    [[bx - 30, bz + 46, 0.4, 0xd6d9d4], [bx + 30, bz + 46, -0.4, 0x4b7c8e]].forEach(function (b) {
-      let tz = b[1];
-      for (let k=0;k<12;k++) { if (CC.coast.isWater(b[0], tz) && CC.coast.riverDepth(b[0], tz)>2) break; tz += 2; }
-      if (!CC.coast.isWater(b[0], tz)) return;
-      const boat = makeMooredBoat(b[3]);
-      boat.position.set(b[0], C.SEA_LEVEL + 0.32, tz);
-      boat.rotation.y = b[2];
-      serviceScene.add(boat);
-      Details.fishingBoats++;
-    });
-
-    // No-build zone so NPC boats avoid docks/building area.
+    // Keep NPC boats clear of the new moorings.
     CC.World = CC.World || {};
-    CC.World.noBoatZones = CC.World.noBoatZones || [];
-    CC.World.noBoatZones.push({ x: bx, z: bz + 20, hw: 42, hz: 42, label: 'Beacon Seafood Docks' });
+    CC.World.noBoatZones = (CC.World.noBoatZones || []).filter(function (z) {
+      return z.label !== 'Beacon Seafood Docks';
+    });
+    CC.World.noBoatZones.push({ x: bx, z: bz + 22, hw: 42, hz: 44, label: 'Beacon Seafood Docks' });
 
-    // NPC spots on dock/platform and outside Beacon Seafood.
+    /* ---------- worker spots on the new deck ---------- */
     Details.beaconDockSpots = Details.beaconDockSpots || [];
     Details.beaconDockSpots.length = 0;
-    const dockPts = [];
-    dockXs.forEach(function (dx) {
-      const end = (Details.beaconDockEnds.find(d=>Math.abs(d.x-(bx+dx))<0.1) || {}).z || (bz + 46);
-      for (let z = bz + bldHh + pW + 2; z <= end - 2; z += 7) {
-        dockPts.push({ x: bx + dx + (z % 14 < 7 ? -0.8 : 0.8), z: z });
-      }
+    for (let x = -14; x <= 14; x += 4) {
+      Details.beaconDockSpots.push({ x: bx + x, z: bz + 3.5 });
+    }
+    [-14, 14].forEach(function (x) {
+      [8, 14, 20, 26].forEach(function (z) {
+        Details.beaconDockSpots.push({ x: bx + x, z: bz + z });
+      });
     });
-    // around building platform
-    for (let x = bx - bldHw - 1.5; x <= bx + bldHw + 1.5; x += 8) {
-      dockPts.push({ x: x, z: bz - bldHh - 1.5 });
-      dockPts.push({ x: x, z: bz + bldHh + 1.5 });
-    }
-    dockPts.push({ x: bx - bldHw - 1.5, z: bz });
-    dockPts.push({ x: bx + bldHw + 1.5, z: bz });
-    dockPts.forEach(function (p) { Details.beaconDockSpots.push(p); });
-    Details.businessCrowdSpots = Details.businessCrowdSpots || [];
-    // keep existing crowd near front, remove duplicates by not adding another with same name? simple push
-    Details.businessCrowdSpots.push({ name: 'BEACON SEAFOOD DOCK', x: bx, z: bz + bldHh + 8, spread: 18 });
+    [-12, -6, 0, 6, 12].forEach(function (x) {
+      Details.beaconDockSpots.push({ x: bx + x, z: bz + 28 });
+    });
+    [-7, 7].forEach(function (x) {
+      [34, 40, 44].forEach(function (z) {
+        Details.beaconDockSpots.push({ x: bx + x, z: bz + z });
+      });
+    });
+    Details.businessCrowdSpots = (Details.businessCrowdSpots || []).filter(function (s) {
+      return s.name !== 'BEACON SEAFOOD DOCK';
+    });
+    Details.businessCrowdSpots.push({
+      name: 'BEACON SEAFOOD DOCK', x: bx, z: bz - 16, spread: 16
+    });
 
-    // Parking lot at the end of the road where it meets Beacon Seafood building.
-    // Use the Dune Track/road approach near west side of building/front lot.
-    const lotCx = bx - 28, lotCz = bz - 4;
-    const lotW = 30, lotD = 34;
-    if (serviceScene) {
-      const lotY = CC.heightAt(lotCx, lotCz);
-      const lot = new THREE.Mesh(new THREE.PlaneGeometry(lotW, lotD), getMat('beaconGravelLot', 0x9f9582));
-      lot.rotation.x = -Math.PI / 2;
-      lot.position.set(lotCx, lotY + 0.07, lotCz);
-      lot.receiveShadow = true;
-      serviceScene.add(lot);
-      // connect lot to building platform
-      deckSlab(lotCx + lotW / 2 - 1.5, bz, 5, 6);
-      const lm = getMat('beaconLotLine', 0xd8d2c2);
-      for (let i = 0; i < 5; i++) {
-        const x = lotCx - 10 + i * 5;
-        const line = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 5.6), lm);
-        line.rotation.x = -Math.PI / 2;
-        line.position.set(x, lotY + 0.09, lotCz - 8);
-        serviceScene.add(line);
-        const line2 = line.clone();
-        line2.position.set(x, lotY + 0.09, lotCz + 4);
-        serviceScene.add(line2);
-      }
-    }
+    const openSpot = parkSpots[2];
+    Details.beaconCustomerSpot = { x: bx + openSpot.x, z: bz + openSpot.z, yaw: openSpot.h };
+    Details.beaconLotParkSpots = [2, 9].map(function (i) {
+      const spot = parkSpots[i];
+      return { x: bx + spot.x, z: bz + spot.z, h: spot.h };
+    });
     Details.beaconSeafood = true;
-    Details.beaconCustomerSpot = { x: lotCx, z: lotCz, yaw: 0 };
-    Details.beaconLotParkSpots = [
-      { x: lotCx - 10, z: lotCz - 8, h: 0 },
-      { x: lotCx - 5,  z: lotCz - 8, h: 0 },
-      { x: lotCx,      z: lotCz - 8, h: 0 },
-      { x: lotCx + 5,  z: lotCz - 8, h: 0 },
-      { x: lotCx + 10, z: lotCz - 8, h: 0 },
-      { x: lotCx - 10, z: lotCz + 4, h: Math.PI },
-      { x: lotCx - 5,  z: lotCz + 4, h: Math.PI },
-      { x: lotCx,      z: lotCz + 4, h: Math.PI }
-    ];
     serviceDone(site);
   }
 
@@ -5818,7 +6004,7 @@
 
     // Two floating berths sit between the quay and the moored ship.
     [-14, 14].forEach(function (z) {
-      apron.add(box(15, 0.5, 5.2, getMat('portDock', 0x8a6a49), 17, 0.1, z));
+      apron.add(box(15, 0.5, 5.2, getMat('portDock', 0x8a6a49, { map: harborWoodTexture() }), 17, 0.1, z));
       [12, 24].forEach(function (x) {
         [-2.2, 2.2].forEach(function (oz) {
           apron.add(cylinder(0.22, 0.22, 3.2, 6, steel, x, -1.35, z + oz));
@@ -6036,9 +6222,10 @@
     for (let x = launch.x - 4; x > launch.x - 110; x -= 2) {
       if (CC.coast.isWater(x, z0)) { shoreX = x; break; }
     }
-    const woodMat = getMat('marinaWood', 0xa87b4e);
-    const darkWood = getMat('marinaWoodDark', 0x7d5838);
-    const postMat = getMat('marinaPost', 0x6d5842);
+    const marinaWoodTex = harborWoodTexture();
+    const woodMat = getMat('marinaWood', 0xa07d54, { map: marinaWoodTex });
+    const darkWood = getMat('marinaWoodDark', 0x6d5138, { map: marinaWoodTex });
+    const postMat = getMat('marinaPost', 0x6d5138, { map: marinaWoodTex });
 
     const pierStart = shoreX + 4, pierEnd = shoreX - 40;
     scene.add(box(pierStart - pierEnd, 0.32, 5.0, woodMat,

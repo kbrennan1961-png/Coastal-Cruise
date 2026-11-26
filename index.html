@@ -30,7 +30,7 @@
       <canvas id="fpvHud" width="1280" height="720"></canvas>
       <div class="fpvVignette"></div>
       <div class="fpvTop">
-        <div id="fpvCoords" class="fpvCoords">LAT 00.0000&nbsp;&nbsp;LON 00.0000</div>
+        <div id="fpvCoords" class="fpvCoords">LAT 000000 N&nbsp;&nbsp;LON 000000 E</div>
         <div class="fpvHome">
           <span id="fpvHomeArrow">▲</span>
           <span id="fpvHomeLabel">HOME 000°</span>
@@ -51,9 +51,16 @@
       <div class="fpvBottom">
         <div id="fpvName" class="fpvName">NIGHT WASP</div>
         <div class="fpvBottomRow">
-          <span id="fpvBattery">100%</span>
-          <span id="fpvMode">FLIGHT MODE ACRO</span>
+          <div class="fpvBatteryGroup" id="fpvBatteryGroup">
+            <span class="fpvBatteryShell" aria-hidden="true"><span id="fpvBatteryFill" class="fpvBatteryFill"></span></span>
+            <span id="fpvBattery">16.8 V · 15:00</span>
+          </div>
+          <span id="fpvMode">ACRO</span>
         </div>
+      </div>
+      <div id="fpvBatteryAlert" class="fpvBatteryAlert hidden" role="alertdialog" aria-live="assertive">
+        <b>battery low</b>
+        <span>RETURN TO PILOT OR FIND A TARGET</span>
       </div>
       <div id="fpvMessage" class="fpvMessage"></div>
     </div>
@@ -253,6 +260,7 @@
   <script src="js/EnvironmentManager.js"></script>
   <script src="js/GeneratedAssets.js"></script>
   <script src="js/DownloadedAssets.js"></script>
+  <script src="js/CustomModels.js"></script>
   <script src="js/FarmBuildingsData.js"></script>
   <script src="js/AnimalAssets.js"></script>
   <script src="js/FishAssets.js"></script>

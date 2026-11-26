@@ -4334,11 +4334,12 @@
         }
       }
 
-      // Roaming cockroaches: small, fast pests that scurry around buildings and
-      // roadside lots. They opt in to the baked animated roach GLB so the town
-      // feels alive without touching the ordinary townsfolk population.
+      // Roaming cockroaches: oversized pests that scurry around buildings and
+      // roadside lots. They opt in to the baked animated "giant cockroach" GLB
+      // so the town feels alive without touching ordinary townsfolk.
       NPCSystem.roaches = [];
-      const roachCount = DL && DL.creatureKeys && DL.creatureKeys.indexOf('roach') >= 0 ? 18 : 0;
+      const roachCount = DL && DL.creatureKeys && DL.creatureKeys.indexOf('roach') >= 0 ? 8 : 0;
+      const ROACH_SCALE = 0.9;
       const roachObstacles = CC.World.obstacles || [];
       const roachSpotClear = function (x, z) {
         for (let i = 0; i < roachObstacles.length; i++) {
@@ -4362,10 +4363,10 @@
         }
         if (!spot) spot = findLandSpot(4);
         const roach = new Pedestrian(scene, spot.x, spot.z, 'roach');
-        roach.homeRadius = 5;
-        roach.radius = 0.2;
-        roach.target.set(spot.x + U.randRange(rng, -2, 2), spot.z + U.randRange(rng, -2, 2));
-        roach.attachDownloaded('roach', { scale: 0.13, moving: true, clip: 'Run' });
+        roach.homeRadius = 8;
+        roach.radius = 1.1;
+        roach.target.set(spot.x + U.randRange(rng, -4, 4), spot.z + U.randRange(rng, -4, 4));
+        roach.attachDownloaded('roach', { scale: ROACH_SCALE, moving: true, clip: 'Run' });
         NPCSystem.pedestrians.push(roach);
         NPCSystem.roaches.push(roach);
       }

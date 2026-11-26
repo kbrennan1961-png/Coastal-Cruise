@@ -92,6 +92,20 @@
       (data.creatures && data.creatures[key]) || null;
   }
 
+  // Some of the Blender-authored source GLBs kept their default "Cube"
+  // placeholder (an untextured light box). It is not part of the character: it
+  // shows up as a tan cube on screen and skews the height normalisation below.
+  // Strip it before measuring/baking the template.
+  function stripPlaceholderMeshes(scene) {
+    const dead = [];
+    scene.traverse(function (node) {
+      if (node.isMesh && /^Cube(?:\.\d+)?$/i.test(node.name || '')) dead.push(node);
+    });
+    dead.forEach(function (node) {
+      if (node.parent) node.parent.remove(node);
+    });
+  }
+
   function boundsOf(object) {
     const box = new THREE.Box3().setFromObject(object);
     const size = box.getSize(new THREE.Vector3());
@@ -112,16 +126,22 @@
       return missing;
     }
     const task = parse(asset.glb).then(function (gltf) {
-      const scene = gltf.scene;
-      scene.updateMatrixWorld(true);
-      const bounds = boundsOf(scene);
+      const raw = gltf.scene;
+      stripPlaceholderMeshes(raw);
+      // The redneck source was exported Z-up (it lies flat along Z). Stand it
+      // up before measuring so height normalisation and the skeleton stay sane.
+      const source = new THREE.Group();
+      source.add(raw);
+      if (asset.kind === 'redneck') source.rotation.x = Math.PI / 2;
+      source.updateMatrixWorld(true);
+      const bounds = boundsOf(source);
       const scale = 1.9 / bounds.h;
       const clips = collectClips(gltf);
-      patchPlaceholderTextures(scene, asset.texture, !!asset.pixelTextures);
+      patchPlaceholderTextures(source, asset.texture, !!asset.pixelTextures);
       const names = Object.keys(clips);
       const first = names[0];
       return {
-        source: scene,
+        source: source,
         clips: clips,
         defaultClip: clips.Idle && 'Idle' || first,
         walkClip: clips.Walk && 'Walk' || clips.Run && 'Run' || first,

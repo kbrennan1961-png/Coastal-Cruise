@@ -21,11 +21,16 @@
     assetErase: 'Erase asset: click a building, landmark or custom asset to remove it.',
     model: 'Model: click to place a baked Blender/baked model from the brush list.',
     trailer: 'Trailer: click a start point, then a finish point to script a road-following or straight-flight shot.',
+    mission: 'Mission: click to add an INAV waypoint; drag an existing waypoint to move it. Double-click to edit.',
     pan: 'Pan: drag the map. Middle mouse or Space+drag also pans.'
   };
 
   const MODEL_RECORDS = (CC.AssetLoader && CC.AssetLoader.models) || {};
-  const MODEL_KEYS = Object.keys(MODEL_RECORDS).sort();
+  let MODEL_KEYS = Object.keys(MODEL_RECORDS).sort();
+
+  function refreshModelKeys() {
+    MODEL_KEYS = Object.keys(MODEL_RECORDS).sort();
+  }
 
   function modelLabel(key) {
     return String(key)
@@ -140,6 +145,7 @@
     gameName: '',
     mapName: 'Coastal Cruise',
     roads: [], buildings: [], landmarks: [], challenges: [], assets: [], trailerShots: [],
+    missions: [], missionEditIndex: -1, wpEditIndex: -1,
     trailerDraft: null, shotEditIndex: -1, transformMode: 'view', transformBase: null,
     elevation: { hills: [], points: [], grid: null },
     view: { scale: 1, tx: 0, ty: 0 },
@@ -157,6 +163,7 @@
 
   let assetDialogResolve = null;
   let assetDialogDefault = '';
+  let blenderGenerateCommand = '';
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
 
@@ -164,6 +171,96 @@
 
   function currentPatch() {
     return CC.mapEdits && CC.mapEdits.active ? CC.mapEdits : null;
+  }
+
+  /* ---------- mission model ----------
+     INAV units throughout: altCm/speedCmS/nav_wp_* are centimetres (and cm/s),
+     100 cm = 1 game world unit. Jump targets are 1-based waypoint numbers. */
+  const MISSION_ACTIONS = ['WAYPOINT', 'POSHOLD_TIME', 'JUMP', 'SET_POI', 'LAND'];
+  const ACTION_LABELS = {
+    WAYPOINT: 'WP', POSHOLD_TIME: 'HOLD', JUMP: 'JUMP', SET_POI: 'POI', LAND: 'LAND'
+  };
+  const ACTION_COLORS = {
+    WAYPOINT: '#8fd3ff', POSHOLD_TIME: '#f2b35c', JUMP: '#c792ea',
+    SET_POI: '#ff8fb1', LAND: '#ff5c5c'
+  };
+
+  function missionNumber(value, fallback) {
+    if (value == null || String(value).trim() === '') return fallback;
+    const n = Number(value);
+    return isFinite(n) ? n : fallback;
+  }
+
+  function normalizeMission(m) {
+    m = m || {};
+    m.version = 1;
+    m.name = m.name || 'Mission';
+    m.actions = Array.isArray(m.actions) ? m.actions
+      : (Array.isArray(m.waypoints) ? m.waypoints : []);
+    m.nav_wp_radius = Math.max(50, missionNumber(
+      m.nav_wp_radius != null ? m.nav_wp_radius : m.safeRadius, 200));
+    m.nav_wp_safe_distance = Math.max(0, missionNumber(
+      m.nav_wp_safe_distance != null ? m.nav_wp_safe_distance : m.safeDistance, 500));
+    m.nav_wp_enforce_altitude = m.nav_wp_enforce_altitude != null
+      ? !!m.nav_wp_enforce_altitude : !!m.enforceAltitude;
+    m.finalAction = 'RTH';
+    // Runtime aliases keep hand-edited patches readable in both naming styles.
+    m.safeRadius = m.nav_wp_radius;
+    m.safeDistance = m.nav_wp_safe_distance;
+    m.enforceAltitude = m.nav_wp_enforce_altitude;
+    if (m.home && (!isFinite(Number(m.home.x)) || !isFinite(Number(m.home.z)))) m.home = null;
+    return m;
+  }
+
+  function newMission(name) {
+    return normalizeMission({
+      version: 1,
+      name: name || ('Mission ' + (state.missions.length + 1)),
+      home: null,
+      actions: [],
+      nav_wp_radius: 200,
+      nav_wp_safe_distance: 500,
+      nav_wp_enforce_altitude: true,
+      finalAction: 'RTH'
+    });
+  }
+
+  function newWaypoint(x, z, index) {
+    return {
+      action: 'WAYPOINT',
+      name: '',
+      x: x, z: z,
+      altCm: 500,
+      speedCmS: 1500,
+      holdSec: 2,
+      jumpTarget: index || 1,
+      poi: { x: x, z: z, y: 0 }
+    };
+  }
+
+  function activeMission() {
+    if (!state.missions.length) return null;
+    if (state.missionEditIndex < 0 || state.missionEditIndex >= state.missions.length) {
+      state.missionEditIndex = 0;
+    }
+    return state.missions[state.missionEditIndex];
+  }
+
+  // Editing enforces nav_wp_safe_distance as a minimum spacing between points.
+  function clampMissionPoint(m, wp, ignoreIndex) {
+    const min = m ? missionNumber(m.nav_wp_safe_distance, 500) / 100 : 0;
+    if (!(min > 0) || !wp) return;
+    const actions = m.actions || [];
+    for (let i = 0; i < actions.length; i++) {
+      if (i === ignoreIndex || actions[i] === wp) continue;
+      const other = actions[i];
+      let dx = wp.x - other.x, dz = wp.z - other.z;
+      let d = Math.hypot(dx, dz);
+      if (d >= min) continue;
+      if (d < 1e-6) { dx = 1; dz = 0; d = 1; }
+      wp.x = other.x + dx / d * min;
+      wp.z = other.z + dz / d * min;
+    }
   }
 
   function gameMapData() {
@@ -200,6 +297,10 @@
     state.landmarks = clone(patch && Array.isArray(patch.landmarks) ? patch.landmarks : baked.landmarks);
     state.challenges = clone(patch && Array.isArray(patch.challenges) ? patch.challenges : baked.challenges);
     state.trailerShots = clone(patch && Array.isArray(patch.trailerShots) ? patch.trailerShots : []);
+    state.missions = clone(patch && Array.isArray(patch.missions)
+      ? patch.missions : (CC.missions || []));
+    state.missions.forEach(normalizeMission);
+    state.missionEditIndex = state.missions.length ? 0 : -1;
     state.assets = clone(patch && patch.assets ? patch.assets : []);
     state.elevation = clone(patch && patch.elevation
       ? patch.elevation : { hills: [], points: [], grid: null });
@@ -520,6 +621,77 @@
     ctx.restore();
   }
 
+  function drawMissions() {
+    if (!state.missions.length) return;
+    ctx.save();
+    ctx.font = '10px Arial';
+    ctx.textBaseline = 'middle';
+    state.missions.forEach(function (m, mi) {
+      const actions = m.actions || [];
+      if (!actions.length) return;
+      const home = m.home;
+      if (home && isFinite(Number(home.x)) && isFinite(Number(home.z))) {
+        const hp = worldToScreen(Number(home.x), Number(home.z));
+        ctx.strokeStyle = '#f2b35c';
+        ctx.fillStyle = 'rgba(242,179,92,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(hp.x, hp.y - 6); ctx.lineTo(hp.x + 6, hp.y);
+        ctx.lineTo(hp.x, hp.y + 6); ctx.lineTo(hp.x - 6, hp.y);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffe2a8';
+        ctx.fillText('HOME', hp.x + 9, hp.y);
+      }
+      const first = actions[0];
+      const fp = worldToScreen(missionNumber(first.x, 0), missionNumber(first.z, 0));
+      const radius = missionNumber(m.nav_wp_radius, 200) / 100 * state.view.scale;
+      if (radius > 3 && radius < canvas.clientWidth) {
+        ctx.strokeStyle = 'rgba(143,211,255,0.28)';
+        ctx.setLineDash([3, 5]);
+        ctx.beginPath(); ctx.arc(fp.x, fp.y, radius, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.beginPath();
+      actions.forEach(function (wp, i) {
+        const p = worldToScreen(missionNumber(wp.x, 0), missionNumber(wp.z, 0));
+        if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      });
+      ctx.strokeStyle = 'rgba(143,211,255,0.65)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([7, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      actions.forEach(function (wp, i) {
+        const p = worldToScreen(missionNumber(wp.x, 0), missionNumber(wp.z, 0));
+        if (!isFinite(p.x) || !isFinite(p.y)) return;
+        const action = MISSION_ACTIONS.indexOf(wp.action) >= 0 ? wp.action : 'WAYPOINT';
+        const color = ACTION_COLORS[action];
+        const sel = state.selection && state.selection.kind === 'mission' &&
+          state.selection.mission === mi && state.selection.index === i;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = sel ? '#ffffff' : 'rgba(12,20,26,0.9)';
+        ctx.lineWidth = sel ? 2.5 : 1;
+        ctx.beginPath(); ctx.arc(p.x, p.y, sel ? 7 : 5, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.fillText((i + 1) + ' ' + ACTION_LABELS[action], p.x + 9, p.y - 7);
+        if (state.view.scale > 0.5) {
+          ctx.fillStyle = 'rgba(220,240,250,0.72)';
+          ctx.fillText(Math.round(missionNumber(wp.altCm, 0)) + 'cm', p.x + 9, p.y + 6);
+        }
+        if (action === 'SET_POI' && wp.poi && isFinite(Number(wp.poi.x)) && isFinite(Number(wp.poi.z))) {
+          const q = worldToScreen(Number(wp.poi.x), Number(wp.poi.z));
+          ctx.strokeStyle = '#ff8fb1';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.strokeRect(q.x - 4, q.y - 4, 8, 8);
+        }
+      });
+    });
+    ctx.restore();
+  }
+
   function isAirVehicle(vehicle) {
     return vehicle === 'jetpack' || vehicle === 'plane' || vehicle === 'helicopter' || vehicle === 'fpv';
   }
@@ -571,6 +743,10 @@
     const s = state.selection;
     if (!s) return null;
     if (s.kind === 'road') return state.roads[s.index] || null;
+    if (s.kind === 'mission') {
+      const m = state.missions[s.mission];
+      return m && (m.actions || [])[s.index] || null;
+    }
     const arr = s.kind === 'asset' ? state.assets : s.kind === 'landmark' ? state.landmarks : state.buildings;
     return arr[s.index] || null;
   }
@@ -643,6 +819,7 @@
     drawShapePreview();
     drawDraft();
     drawTrailerShots();
+    drawMissions();
     drawSelection();
     drawCursor();
     updateCounts();
@@ -702,6 +879,18 @@
     return best;
   }
 
+  function hitMissionWaypoint(sx, sy) {
+    let best = null, bestD = 10;
+    state.missions.forEach(function (m, mi) {
+      (m.actions || []).forEach(function (wp, wi) {
+        const s = worldToScreen(missionNumber(wp.x, 0), missionNumber(wp.z, 0));
+        const d = Math.hypot(s.x - sx, s.y - sy);
+        if (d < bestD) { bestD = d; best = { kind: 'mission', mission: mi, index: wi }; }
+      });
+    });
+    return best;
+  }
+
   function hitRoadSegment(sx, sy) {
     const p = screenToWorld(sx, sy);
     let best = null, bestD = Infinity;
@@ -727,6 +916,7 @@
       roads: clone(state.roads), buildings: clone(state.buildings),
       landmarks: clone(state.landmarks), challenges: clone(state.challenges),
       assets: clone(state.assets), trailerShots: clone(state.trailerShots),
+      missions: clone(state.missions),
       elevation: clone(state.elevation)
     };
   }
@@ -744,12 +934,18 @@
     state.challenges = clone(s.challenges);
     state.assets = clone(s.assets || []);
     state.trailerShots = clone(s.trailerShots || []);
+    state.missions = clone(s.missions || []);
+    state.missions.forEach(normalizeMission);
+    state.missionEditIndex = state.missions.length ? Math.min(
+      Math.max(0, state.missionEditIndex), state.missions.length - 1) : -1;
     state.elevation = clone(s.elevation || { hills: [], points: [], grid: null });
     state.selection = null;
     state.draft = null;
     state.drag = null;
     $('draftHint').hidden = true;
     updateSelectionForm();
+    renderMissionList();
+    renderMissionWaypointList();
     updateHistoryButtons();
     updateApplyButton();
     render();
@@ -786,11 +982,15 @@
     const obj = getSelectedObject();
     if (!obj) {
       $('selectionEmpty').hidden = false;
+      $('selectionEmpty').textContent = state.selection && state.selection.kind === 'mission'
+        ? 'Mission waypoint selected — drag to move, Delete to remove, or edit it in the INAV MISSIONS panel.'
+        : 'Nothing selected.';
       $('selectionForm').hidden = true;
       $('selModelRow').hidden = true;
       $('selScaleRow').hidden = true;
       return;
     }
+    $('selectionEmpty').textContent = 'Nothing selected.';
     $('selectionEmpty').hidden = true;
     $('selectionForm').hidden = false;
     const s = state.selection;
@@ -871,6 +1071,17 @@
     const s = state.selection;
     if (!s) return;
     pushUndo();
+    if (s.kind === 'mission') {
+      const m = state.missions[s.mission];
+      if (!m || !(m.actions || [])[s.index]) return;
+      m.actions.splice(s.index, 1);
+      state.selection = null;
+      renderMissionList(); renderMissionWaypointList();
+      updateSelectionForm();
+      render();
+      setMessage('Mission waypoint deleted.');
+      return;
+    }
     const arr = s.kind === 'road' ? state.roads
       : s.kind === 'asset' ? state.assets
         : s.kind === 'landmark' ? state.landmarks : state.buildings;
@@ -972,7 +1183,7 @@
     state.tool = tool;
     state.draft = null;
     $('draftHint').hidden = true;
-    document.querySelectorAll('#tools .tool').forEach(function (b) {
+    document.querySelectorAll('.tool').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tool === tool);
     });
     $('toolHint').textContent = HINTS[tool] || '';
@@ -1088,7 +1299,8 @@
       landmarks: clone(state.landmarks),
       challenges: clone(state.challenges),
       assets: clone(state.assets),
-      trailerShots: clone(state.trailerShots)
+      trailerShots: clone(state.trailerShots),
+      missions: clone(state.missions)
     };
   }
 
@@ -1175,6 +1387,10 @@
     } else {
       btn.innerHTML = '✔ <span>Apply to game</span>';
       btn.title = 'Export the patch the game will load';
+    }
+    const menuItem = document.querySelector('#menuBar .menuItem[data-target="#applyBtn"]');
+    if (menuItem && menuItem.childNodes[0] && menuItem.childNodes[0].nodeType === 3) {
+      menuItem.childNodes[0].textContent = state.standaloneGame ? 'Create game folder ' : 'Apply to game ';
     }
   }
 
@@ -1442,6 +1658,7 @@
           roads: patch.roads || [], buildings: patch.buildings || [],
           landmarks: patch.landmarks || [], challenges: patch.challenges || [],
           assets: patch.assets || [], trailerShots: patch.trailerShots || [],
+          missions: patch.missions || [],
           elevation: patch.elevation || null
         });
         setMessage('Loaded patch from ' + file.name + '.');
@@ -1656,12 +1873,120 @@
     };
   }
 
+  /* ---------- KML flight plans ---------- */
+  function kmlNodes(root, localName) {
+    if (!root || !root.querySelectorAll) return [];
+    const out = [];
+    const all = root.querySelectorAll('*');
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].localName === localName || all[i].nodeName === localName) out.push(all[i]);
+    }
+    return out;
+  }
+
+  function kmlText(root, localName) {
+    const node = kmlNodes(root, localName)[0];
+    return node ? String(node.textContent || '').trim() : '';
+  }
+
+  function kmlMeta(text, fallbackAltCm, x, z) {
+    const meta = String(text || '');
+    const actionMatch = meta.match(/\b(WAYPOINT|POSHOLD_TIME|JUMP|SET_POI|LAND)\b/i);
+    const action = actionMatch ? actionMatch[1].toUpperCase() : 'WAYPOINT';
+    let altCm = fallbackAltCm;
+    const altMatch = meta.match(/(?:alt(?:itude)?|AMSL)\s*[:=]?\s*(-?\d+(?:\.\d+)?)\s*(cm|ft|m)?/i);
+    if (altMatch) {
+      const unit = (altMatch[2] || 'm').toLowerCase();
+      const factor = unit === 'cm' ? 1 : unit === 'ft' ? 30.48 : 100;
+      altCm = Math.round(Number(altMatch[1]) * factor);
+    }
+    let speedCmS = 1500;
+    const speedMatch = meta.match(/(?:speed|vel(?:ocity)?)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(cm\/s|m\/s|km\/h)?/i);
+    if (speedMatch) {
+      const unit = (speedMatch[2] || 'cm/s').toLowerCase();
+      const factor = unit === 'm/s' ? 100 : unit === 'km/h' ? 100 / 3.6 : 1;
+      speedCmS = Number(speedMatch[1]) * factor;
+    }
+    let holdSec = 2;
+    const holdMatch = meta.match(/(?:hold|duration)\s*[:=]?\s*(\d+(?:\.\d+)?)/i);
+    if (holdMatch) holdSec = Number(holdMatch[1]);
+    let jumpTarget = 1;
+    const jumpMatch = meta.match(/jump(?:Target|To)?\s*(?:waypoint|#)?\s*[:=]?\s*(\d+)/i);
+    if (jumpMatch) jumpTarget = Number(jumpMatch[1]);
+    let poi = { x: x, z: z, y: 0 };
+    const poiMatch = meta.match(/poi\s*[:=]?\s*(-?\d+(?:\.\d+)?)\s*[,;\s]+\s*(-?\d+(?:\.\d+)?)\s*[,;\s]+\s*(-?\d+(?:\.\d+)?)/i);
+    if (poiMatch) poi = { x: Number(poiMatch[1]), z: Number(poiMatch[2]), y: Number(poiMatch[3]) };
+    return { action: action, altCm: altCm, speedCmS: speedCmS, holdSec: holdSec, jumpTarget: jumpTarget, poi: poi };
+  }
+
+  function parseKML(text) {
+    const doc = new DOMParser().parseFromString(text, 'text/xml');
+    if (doc.querySelector('parsererror')) throw new Error('Invalid KML XML.');
+    const places = [];
+    let nodes = kmlNodes(doc, 'Placemark');
+    if (!nodes.length) nodes = kmlNodes(doc, 'coordinates');
+    nodes.forEach(function (placemark) {
+      const coordText = placemark.localName === 'coordinates'
+        ? String(placemark.textContent || '') : kmlText(placemark, 'coordinates');
+      const rawTuples = coordText.trim().split(/\s+/).filter(Boolean);
+      const name = placemark.localName === 'coordinates' ? '' : kmlText(placemark, 'name');
+      const description = placemark.localName === 'coordinates' ? '' : kmlText(placemark, 'description');
+      // A LineString/Polygon Placemark holds a whole path. KML polygons close
+      // their ring by repeating the first point; drop that duplicate before
+      // turning every vertex into a waypoint.
+      const tuples = rawTuples.slice();
+      if (tuples.length > 2) {
+        const first = tuples[0], last = tuples[tuples.length - 1];
+        if (first === last) tuples.pop();
+      }
+      tuples.forEach(function (tuple, index) {
+        const parts = tuple.split(',');
+        const lon = Number(parts[0]), lat = Number(parts[1]);
+        if (!isFinite(lon) || !isFinite(lat)) return;
+        const alt = parts.length > 2 && isFinite(Number(parts[2])) ? Number(parts[2]) : null;
+        places.push({
+          lon: lon, lat: lat, alt: alt,
+          name: tuples.length > 1 && name ? name + ' #' + (index + 1) : name,
+          description: description
+        });
+      });
+    });
+    if (!places.length) throw new Error('No Placemark coordinates found in the KML.');
+    let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    places.forEach(function (p) {
+      minLon = Math.min(minLon, p.lon); maxLon = Math.max(maxLon, p.lon);
+      minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat);
+    });
+    const map = latLonMapper({ minLon: minLon, maxLon: maxLon, minLat: minLat, maxLat: maxLat });
+    const baseAlt = places[0].alt != null ? places[0].alt : 0;
+    const points = places.map(function (p) {
+      const world = map(p.lon, p.lat);
+      const fallbackAltCm = Math.round(((p.alt != null ? p.alt : baseAlt) - baseAlt) * 100);
+      const info = kmlMeta(p.name + '\n' + p.description, fallbackAltCm, world.x, world.z);
+      const wp = newWaypoint(world.x, world.z, 1);
+      wp.action = info.action;
+      wp.name = p.name || '';
+      wp.altCm = info.altCm;
+      wp.speedCmS = info.speedCmS;
+      wp.holdSec = info.holdSec;
+      wp.jumpTarget = info.jumpTarget;
+      wp.poi = info.poi;
+      return { world: world, wp: wp };
+    });
+    const home = points[0].world;
+    const mission = newMission(kmlText(doc, 'name') || 'KML Mission');
+    mission.home = { x: home.x, z: home.z };
+    mission.actions = points.map(function (p) { return p.wp; });
+    return { missions: [normalizeMission(mission)] };
+  }
+
   function parseEditorJSON(obj) {
     const data = {};
     if (obj.world) data.world = clone(obj.world);
-    ['roads', 'buildings', 'landmarks', 'assets', 'challenges', 'trailerShots'].forEach(function (k) {
+    ['roads', 'buildings', 'landmarks', 'assets', 'challenges', 'trailerShots', 'missions'].forEach(function (k) {
       if (Array.isArray(obj[k])) data[k] = clone(obj[k]);
     });
+    if (Array.isArray(data.missions)) data.missions.forEach(normalizeMission);
     if (obj.elevation) data.elevation = normalizeElevation(obj.elevation);
     if (obj.mapName) data.mapName = obj.mapName;
     return data;
@@ -1674,15 +1999,18 @@
       buildTerrain();
       fitView();
     }
-    ['roads', 'buildings', 'landmarks', 'assets', 'challenges', 'trailerShots'].forEach(function (k) {
+    ['roads', 'buildings', 'landmarks', 'assets', 'challenges', 'trailerShots', 'missions'].forEach(function (k) {
       if (Array.isArray(data[k])) state[k] = clone(data[k]);
     });
+    state.missions.forEach(normalizeMission);
+    state.missionEditIndex = state.missions.length ? 0 : -1;
     if (data.elevation) state.elevation = normalizeElevation(data.elevation);
     if (data.mapName) state.mapName = data.mapName;
     state.selection = null;
     state.draft = null;
     $('draftHint').hidden = true;
     updateSelectionForm();
+    renderMissionList(); renderMissionWaypointList();
     render();
     setMessage('Imported ' + (data.roads || []).length + ' roads, ' +
       (data.buildings || []).length + ' buildings, ' + (data.assets || []).length +
@@ -1695,8 +2023,11 @@
       try {
         const text = String(reader.result || '');
         let data;
-        if (/\.(osm|xml)$/i.test(file.name) || /^\s*</.test(text)) {
-          data = parseOSM(text);
+        if (/\.kml$/i.test(file.name)) {
+          data = parseKML(text);
+        } else if (/\.(osm|xml)$/i.test(file.name) || /^\s*</.test(text)) {
+          if (/<Placemark|<kml:/i.test(text)) data = parseKML(text);
+          else data = parseOSM(text);
         } else {
           const obj = JSON.parse(text);
           data = (obj.type === 'FeatureCollection' || obj.type === 'Feature')
@@ -1752,6 +2083,269 @@
       row.appendChild(del);
       host.appendChild(row);
     });
+  }
+
+  /* ---------- mission list + dialogs ---------- */
+  function renderMissionList() {
+    const host = $('missionList');
+    if (!host) return;
+    host.textContent = '';
+    if (!state.missions.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No missions yet.';
+      host.appendChild(empty);
+      return;
+    }
+    state.missions.forEach(function (m, i) {
+      const row = document.createElement('div');
+      row.className = 'shotEntry';
+      const label = document.createElement('span');
+      label.textContent = (i + 1) + ' · ' + (m.name || 'Mission') + ' · ' +
+        (m.actions || []).length + ' wp · ' + (m.finalAction || 'RTH');
+      row.appendChild(label);
+      const edit = document.createElement('button');
+      edit.textContent = 'Edit';
+      edit.addEventListener('click', function () { openMissionDialog(i); });
+      row.appendChild(edit);
+      const del = document.createElement('button');
+      del.className = 'danger';
+      del.textContent = '✕';
+      del.title = 'Delete mission';
+      del.addEventListener('click', function () {
+        pushUndo();
+        state.missions.splice(i, 1);
+        if (state.missionEditIndex >= state.missions.length) {
+          state.missionEditIndex = state.missions.length - 1;
+        }
+        state.selection = null;
+        renderMissionList(); renderMissionWaypointList();
+        updateSelectionForm(); render();
+        setMessage('Mission deleted.');
+      });
+      row.appendChild(del);
+      host.appendChild(row);
+    });
+  }
+
+  function renderMissionWaypointList() {
+    const host = $('missionWaypointList');
+    if (!host) return;
+    host.textContent = '';
+    const m = state.missions[state.missionEditIndex];
+    const actions = m ? (m.actions || []) : [];
+    if (!actions.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No waypoints yet. Use Add on map (J), then click the map.';
+      host.appendChild(empty);
+      return;
+    }
+    actions.forEach(function (wp, i) {
+      const row = document.createElement('div');
+      row.className = 'shotEntry';
+      const label = document.createElement('span');
+      const action = MISSION_ACTIONS.indexOf(wp.action) >= 0 ? wp.action : 'WAYPOINT';
+      label.textContent = (i + 1) + ' · ' + action + ' · ' +
+        Math.round(missionNumber(wp.altCm, 0)) + 'cm · ' +
+        Math.round(missionNumber(wp.speedCmS, 0)) + 'cm/s';
+      row.appendChild(label);
+      const edit = document.createElement('button');
+      edit.textContent = 'Edit';
+      edit.addEventListener('click', function () { openWaypointDialog(state.missionEditIndex, i); });
+      row.appendChild(edit);
+      if (i > 0) {
+        const up = document.createElement('button');
+        up.textContent = '▲';
+        up.title = 'Move waypoint earlier';
+        up.addEventListener('click', function () {
+          pushUndo();
+          const list = state.missions[state.missionEditIndex].actions;
+          const tmp = list[i - 1]; list[i - 1] = list[i]; list[i] = tmp;
+          renderMissionWaypointList(); render();
+        });
+        row.appendChild(up);
+      }
+      if (i < actions.length - 1) {
+        const down = document.createElement('button');
+        down.textContent = '▼';
+        down.title = 'Move waypoint later';
+        down.addEventListener('click', function () {
+          pushUndo();
+          const list = state.missions[state.missionEditIndex].actions;
+          const tmp = list[i + 1]; list[i + 1] = list[i]; list[i] = tmp;
+          renderMissionWaypointList(); render();
+        });
+        row.appendChild(down);
+      }
+      const del = document.createElement('button');
+      del.className = 'danger';
+      del.textContent = '✕';
+      del.title = 'Delete waypoint';
+      del.addEventListener('click', function () {
+        pushUndo();
+        const list = state.missions[state.missionEditIndex].actions;
+        list.splice(i, 1);
+        state.selection = null;
+        renderMissionList(); renderMissionWaypointList();
+        updateSelectionForm(); render();
+        setMessage('Waypoint deleted.');
+      });
+      row.appendChild(del);
+      host.appendChild(row);
+    });
+  }
+
+  function openMissionDialog(index) {
+    if (!state.missions[index]) {
+      pushUndo();
+      state.missions.push(newMission());
+      index = state.missions.length - 1;
+      renderMissionList();
+    }
+    state.missionEditIndex = index;
+    const m = state.missions[index];
+    $('missionName').value = m.name || ('Mission ' + (index + 1));
+    $('missionHomeX').value = m.home && isFinite(Number(m.home.x)) ? Number(m.home.x).toFixed(1) : '';
+    $('missionHomeZ').value = m.home && isFinite(Number(m.home.z)) ? Number(m.home.z).toFixed(1) : '';
+    $('missionRadius').value = missionNumber(m.nav_wp_radius, 200);
+    $('missionSafeDistance').value = missionNumber(m.nav_wp_safe_distance, 500);
+    $('missionEnforceAltitude').checked = !!m.nav_wp_enforce_altitude;
+    $('missionFinalAction').value = 'RTH';
+    renderMissionWaypointList();
+    $('missionDialog').hidden = false;
+    setTimeout(function () { $('missionName').focus(); $('missionName').select(); }, 0);
+  }
+
+  function closeMissionDialog() {
+    $('missionDialog').hidden = true;
+    render();
+  }
+
+  function saveMission() {
+    const m = state.missions[state.missionEditIndex];
+    if (!m) { closeMissionDialog(); return; }
+    pushUndo();
+    m.name = $('missionName').value.trim() || ('Mission ' + (state.missionEditIndex + 1));
+    const hx = Number($('missionHomeX').value), hz = Number($('missionHomeZ').value);
+    m.home = isFinite(hx) && isFinite(hz) && $('missionHomeX').value !== '' && $('missionHomeZ').value !== ''
+      ? { x: hx, z: hz } : null;
+    m.nav_wp_radius = Math.max(50, missionNumber($('missionRadius').value, 200));
+    m.nav_wp_safe_distance = Math.max(0, missionNumber($('missionSafeDistance').value, 500));
+    m.nav_wp_enforce_altitude = !!$('missionEnforceAltitude').checked;
+    m.finalAction = 'RTH';
+    normalizeMission(m);
+    (m.actions || []).forEach(function (wp, i) { clampMissionPoint(m, wp, i); });
+    closeMissionDialog();
+    renderMissionList(); renderMissionWaypointList(); render();
+    setMessage('Mission saved: ' + m.name + '.');
+  }
+
+  function deleteActiveMission() {
+    const i = state.missionEditIndex;
+    if (i < 0 || !state.missions[i]) { closeMissionDialog(); return; }
+    pushUndo();
+    state.missions.splice(i, 1);
+    state.missionEditIndex = state.missions.length ? Math.min(i, state.missions.length - 1) : -1;
+    state.selection = null;
+    closeMissionDialog();
+    renderMissionList(); renderMissionWaypointList();
+    updateSelectionForm(); render();
+    setMessage('Mission deleted.');
+  }
+
+  function updateWaypointDialogFields() {
+    const action = $('wpAction').value;
+    $('wpHoldRow').hidden = action !== 'POSHOLD_TIME';
+    $('wpJumpRow').hidden = action !== 'JUMP';
+    $('wpPoiRow').hidden = action !== 'SET_POI';
+    $('wpAltRow').hidden = action === 'JUMP' || action === 'SET_POI';
+  }
+
+  function openWaypointDialog(missionIndex, wpIndex) {
+    const m = state.missions[missionIndex];
+    const wp = m && (m.actions || [])[wpIndex];
+    if (!wp) return;
+    state.missionEditIndex = missionIndex;
+    state.wpEditIndex = wpIndex;
+    $('wpAction').value = MISSION_ACTIONS.indexOf(wp.action) >= 0 ? wp.action : 'WAYPOINT';
+    $('wpName').value = wp.name || '';
+    $('wpX').value = missionNumber(wp.x, 0).toFixed(1);
+    $('wpZ').value = missionNumber(wp.z, 0).toFixed(1);
+    $('wpAltCm').value = missionNumber(wp.altCm, 500);
+    $('wpSpeedCmS').value = missionNumber(wp.speedCmS, 1500);
+    $('wpHoldSec').value = missionNumber(wp.holdSec, 2);
+    $('wpJumpTarget').value = Math.max(1, Math.floor(missionNumber(wp.jumpTarget, 1)));
+    const poi = wp.poi || {};
+    $('wpPoiX').value = missionNumber(poi.x, wp.x);
+    $('wpPoiZ').value = missionNumber(poi.z, wp.z);
+    $('wpPoiY').value = missionNumber(poi.y, 0);
+    updateWaypointDialogFields();
+    $('wpDeleteBtn').hidden = false;
+    $('wpDialog').hidden = false;
+    setTimeout(function () { $('wpAction').focus(); }, 0);
+  }
+
+  function closeWaypointDialog() {
+    $('wpDialog').hidden = true;
+    state.wpEditIndex = -1;
+    render();
+  }
+
+  function saveWaypoint() {
+    const m = state.missions[state.missionEditIndex];
+    const wp = m && (m.actions || [])[state.wpEditIndex];
+    if (!wp) { closeWaypointDialog(); return; }
+    pushUndo();
+    const action = $('wpAction').value;
+    wp.action = MISSION_ACTIONS.indexOf(action) >= 0 ? action : 'WAYPOINT';
+    wp.name = $('wpName').value.trim();
+    wp.x = missionNumber($('wpX').value, 0);
+    wp.z = missionNumber($('wpZ').value, 0);
+    wp.altCm = missionNumber($('wpAltCm').value, 500);
+    wp.speedCmS = Math.max(0, missionNumber($('wpSpeedCmS').value, 1500));
+    wp.holdSec = Math.max(0, missionNumber($('wpHoldSec').value, 2));
+    wp.jumpTarget = Math.max(1, Math.floor(missionNumber($('wpJumpTarget').value, 1)));
+    wp.poi = {
+      x: missionNumber($('wpPoiX').value, wp.x),
+      z: missionNumber($('wpPoiZ').value, wp.z),
+      y: missionNumber($('wpPoiY').value, 0)
+    };
+    clampMissionPoint(m, wp, state.wpEditIndex);
+    closeWaypointDialog();
+    renderMissionList(); renderMissionWaypointList(); render();
+    setMessage('Waypoint saved: ' + wp.action + '.');
+  }
+
+  function deleteActiveWaypoint() {
+    const m = state.missions[state.missionEditIndex];
+    const i = state.wpEditIndex;
+    if (!m || !m.actions || !m.actions[i]) { closeWaypointDialog(); return; }
+    pushUndo();
+    m.actions.splice(i, 1);
+    state.selection = null;
+    closeWaypointDialog();
+    renderMissionList(); renderMissionWaypointList();
+    updateSelectionForm(); render();
+    setMessage('Waypoint deleted.');
+  }
+
+  function addMissionWaypoint(x, z) {
+    pushUndo();
+    let m = activeMission();
+    if (!m) {
+      m = newMission();
+      state.missions.push(m);
+      state.missionEditIndex = state.missions.length - 1;
+      renderMissionList();
+    }
+    const wp = newWaypoint(x, z, m.actions.length + 1);
+    clampMissionPoint(m, wp, -1);
+    m.actions.push(wp);
+    state.selection = { kind: 'mission', mission: state.missionEditIndex, index: m.actions.length - 1 };
+    renderMissionList(); renderMissionWaypointList();
+    updateSelectionForm(); render();
+    setMessage('Waypoint ' + m.actions.length + ' added — edit its action, altitude and speed in INAV MISSIONS.');
   }
 
   function openShotDialog(index) {
@@ -1850,6 +2444,11 @@
   function openBlenderDialog() {
     $('blenderToCode').textContent = 'node tools/blender-map-bridge.js to-blender js/MapEdits.js map.blend';
     $('blenderFromCode').textContent = 'node tools/blender-map-bridge.js to-editor map.blend patch.json';
+    const generateRow = $('blenderGenerateRow');
+    if (generateRow) {
+      generateRow.hidden = !blenderGenerateCommand;
+      $('blenderGenerateCode').textContent = blenderGenerateCommand || '';
+    }
     $('blenderDialog').hidden = false;
   }
 
@@ -1870,6 +2469,19 @@
       assetDialogDefault = defaultName || ('Editor ' + (ASSET_LABELS[type] || 'Asset'));
       $('assetName').value = assetDialogDefault;
       $('assetDesc').value = '';
+      $('assetGenerate').checked = false;
+      $('assetPrompt').value = '';
+      $('assetPromptRow').hidden = true;
+      $('assetGenerateHint').hidden = true;
+      $('assetGenerate').onchange = function () {
+        const on = !!$('assetGenerate').checked;
+        $('assetPromptRow').hidden = !on;
+        $('assetGenerateHint').hidden = !on;
+        if (on && !$('assetPrompt').value.trim()) {
+          $('assetPrompt').value = $('assetDesc').value.trim();
+        }
+        if (on) setTimeout(function () { $('assetPrompt').focus(); }, 0);
+      };
       $('assetModelRow').hidden = !isModel;
       if (isModel) fillModelSelect($('assetModel'), defaultModel || MODEL_KEYS[0]);
       dialog.hidden = false;
@@ -1886,11 +2498,93 @@
   }
 
   function submitAssetDialog() {
+    const name = $('assetName').value.trim() || assetDialogDefault;
+    const generate = !!$('assetGenerate').checked;
+    const prompt = ($('assetPrompt').value || $('assetDesc').value).trim();
+    if (generate && !prompt) {
+      setMessage('Enter a detailed prompt before generating with Blender.');
+      $('assetPrompt').focus();
+      return;
+    }
     closeAssetDialog({
-      name: $('assetName').value.trim() || assetDialogDefault,
+      name: name,
       description: $('assetDesc').value.trim(),
-      model: $('assetModel').value || MODEL_KEYS[0]
+      model: $('assetModel').value || MODEL_KEYS[0],
+      generate: generate,
+      prompt: generate ? prompt : '',
+      key: 'ai_' + (slugify(name) || 'generated-asset')
     });
+  }
+
+  /* Place a pending generated model at the click position, download the prompt
+     job, and show the exact local Blender 3.6 command needed to bake it. */
+  function placeGeneratedAsset(info, at) {
+    pushUndo();
+    const asset = {
+      id: 'edit_' + Date.now(), type: 'model', model: info.key,
+      name: info.name, description: info.description || info.prompt,
+      prompt: info.prompt, x: at.x, z: at.z, y: 0, scale: 1, rot: 0,
+      w: 8, l: 8, h: 6, generated: true
+    };
+    state.assets.push(asset);
+    state.selection = { kind: 'asset', index: state.assets.length - 1 };
+    updateSelectionForm();
+    render();
+
+    const file = slugify(info.name || info.key) + '.aiasset.json';
+    const out = 'capture/generated-' + slugify(info.key) + '.json';
+    const job = { version: 1, key: info.key, name: info.name,
+      description: info.description || '', prompt: info.prompt, asset: clone(asset) };
+    downloadBlob(new Blob([JSON.stringify(job, null, 2)],
+      { type: 'application/json' }), file);
+    blenderGenerateCommand = 'node tools/blender-ai-asset.js generate ~/Downloads/' +
+      file + ' --out ' + out;
+    openBlenderDialog();
+    setMessage('Placed "' + info.name + '" at X ' + at.x.toFixed(1) +
+      ' / Z ' + at.z.toFixed(1) + '. Bake it with Blender, then import the result JSON.');
+  }
+
+  /* Import the JSON written by tools/blender-ai-asset.js. Registering the model
+     makes it visible immediately in the 2D/3D preview without a page reload. */
+  function applyGeneratedAsset(data) {
+    if (!data || !data.models) {
+      setMessage('That file is not a generated-model result.');
+      return false;
+    }
+    const keys = Object.keys(data.models);
+    if (!keys.length) {
+      setMessage('Generated result contains no models.');
+      return false;
+    }
+    if (CC.AssetLoader && CC.AssetLoader.registerModels) {
+      CC.AssetLoader.registerModels(data.models);
+    } else {
+      Object.keys(data.models).forEach(function (key) { MODEL_RECORDS[key] = data.models[key]; });
+    }
+    refreshModelKeys();
+    [ $('modelKey'), $('assetModel'), $('paintModel'), $('selModel') ].forEach(function (select) {
+      if (select) fillModelSelect(select, keys[0]);
+    });
+
+    const asset = data.asset || (data.job && data.job.asset) || null;
+    if (asset) {
+      pushUndo();
+      let index = -1;
+      if (asset.id) index = state.assets.findIndex(function (a) { return a.id === asset.id; });
+      if (index < 0 && asset.model) {
+        index = state.assets.findIndex(function (a) { return a.model === asset.model && a.generated; });
+      }
+      const placed = clone(asset);
+      placed.generated = true;
+      placed.model = placed.model || keys[0];
+      if (index >= 0) state.assets[index] = placed;
+      else { index = state.assets.length; state.assets.push(placed); }
+      state.selection = { kind: 'asset', index: index };
+      updateSelectionForm();
+      render();
+    }
+    setMessage('Imported generated model: ' + modelLabel(keys[0]) + '. Drag it to fine-tune its position.');
+    return true;
   }
 
   function syncNewGameMode() {
@@ -1938,12 +2632,15 @@
     state.landmarks = [];
     state.challenges = [];
     state.assets = [];
+    state.missions = [];
+    state.missionEditIndex = -1;
     state.elevation = { hills: [], points: [], grid: null };
     state.selection = null;
     state.draft = null;
     $('draftHint').hidden = true;
     $('newMapDialog').hidden = true;
     updateApplyButton();
+    renderMissionList(); renderMissionWaypointList();
     buildTerrain();
     fitView();
     updateSelectionForm();
@@ -1988,6 +2685,16 @@
     if (e.button !== 0) return;
 
     if (state.tool === 'select') {
+      const mh = hitMissionWaypoint(pos.sx, pos.sy);
+      if (mh) {
+        const wp = (state.missions[mh.mission].actions || [])[mh.index];
+        state.selection = mh;
+        pushUndo();
+        state.drag = { type: 'mission', world: world, ox: wp.x, oz: wp.z,
+          mission: mh.mission, index: mh.index };
+        updateSelectionForm(); render();
+        return;
+      }
       const v = hitRoadVertex(pos.sx, pos.sy);
       if (v) {
         state.selection = v;
@@ -2034,6 +2741,22 @@
       return;
     }
 
+    if (state.tool === 'mission') {
+      const hit = hitMissionWaypoint(pos.sx, pos.sy);
+      if (hit) {
+        const wp = (state.missions[hit.mission].actions || [])[hit.index];
+        state.selection = hit;
+        state.missionEditIndex = hit.mission;
+        pushUndo();
+        state.drag = { type: 'mission', world: world, ox: wp.x, oz: wp.z,
+          mission: hit.mission, index: hit.index };
+        updateSelectionForm(); render();
+        return;
+      }
+      addMissionWaypoint(world.x, world.z);
+      return;
+    }
+
     if (state.tool === 'trailer') {
       if (!state.trailerDraft || state.trailerDraft.finish) {
         state.trailerDraft = { start: { x: world.x, z: world.z }, finish: null, vehicle: 'coupe', mode: 'road' };
@@ -2066,6 +2789,7 @@
       const at = { x: world.x, z: world.z };
       askAssetDetails('tree', 'Editor Tree').then(function (info) {
         if (!info) { setMessage('Asset creation cancelled.'); return; }
+        if (info.generate) { placeGeneratedAsset(info, at); return; }
         pushUndo();
         state.assets.push({
           id: 'edit_' + Date.now(), type: 'tree', name: info.name,
@@ -2084,6 +2808,7 @@
       const key = $('modelKey').value || MODEL_KEYS[0];
       askAssetDetails('model', 'Editor ' + modelLabel(key), key).then(function (info) {
         if (!info) { setMessage('Asset creation cancelled.'); return; }
+        if (info.generate) { placeGeneratedAsset(info, at); return; }
         pushUndo();
         const chosen = info.model || key;
         const scale = Math.max(0.05, Number($('modelScale').value) || 1);
@@ -2135,6 +2860,14 @@
           obj.x = d.ox + (world.x - d.world.x);
           obj.z = d.oz + (world.z - d.world.z);
         }
+      } else if (d.type === 'mission') {
+        const m = state.missions[d.mission];
+        const wp = m && (m.actions || [])[d.index];
+        if (wp) {
+          wp.x = d.ox + (world.x - d.world.x);
+          wp.z = d.oz + (world.z - d.world.z);
+          clampMissionPoint(m, wp, d.index);
+        }
       } else if (d.type === 'shape') {
         d.current = world;
       } else if (d.type === 'paint') {
@@ -2178,13 +2911,22 @@
     if (shape) {
       askAssetDetails(shape.tool, 'Editor ' + (ASSET_LABELS[shape.tool] || 'Asset')).then(function (info) {
         if (!info) { setMessage('Asset creation cancelled.'); return; }
-        commitShape(shape, info);
+        if (info.generate) {
+          const a = shape.anchor || {}, b = shape.current || a;
+          placeGeneratedAsset(info, { x: (Number(a.x) + Number(b.x)) * 0.5,
+            z: (Number(a.z) + Number(b.z)) * 0.5 });
+        } else commitShape(shape, info);
       });
     }
   });
 
-  canvas.addEventListener('dblclick', function () {
-    if (state.tool === 'road' && state.draft && state.draft.length >= 2) finishRoad();
+  canvas.addEventListener('dblclick', function (e) {
+    if (state.tool === 'road' && state.draft && state.draft.length >= 2) { finishRoad(); return; }
+    if (state.tool === 'mission' || state.tool === 'select') {
+      const pos = pointerPos(e);
+      const hit = hitMissionWaypoint(pos.sx, pos.sy);
+      if (hit) openWaypointDialog(hit.mission, hit.index);
+    }
   });
 
   canvas.addEventListener('wheel', function (e) {
@@ -2208,6 +2950,16 @@
     if (!$('shotDialog').hidden) {
       if (e.key === 'Escape') { e.preventDefault(); closeShotDialog(); }
       else if (e.key === 'Enter' && e.target === $('shotName')) { e.preventDefault(); saveShot(); }
+      return;
+    }
+    if (!$('missionDialog').hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); closeMissionDialog(); }
+      else if (e.key === 'Enter' && e.target === $('missionName')) { e.preventDefault(); saveMission(); }
+      return;
+    }
+    if (!$('wpDialog').hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); closeWaypointDialog(); }
+      else if (e.key === 'Enter' && e.target === $('wpName')) { e.preventDefault(); saveWaypoint(); }
       return;
     }
     if (!$('blenderDialog').hidden) {
@@ -2243,7 +2995,7 @@
       else { fitView(); render(); }
       return;
     }
-    const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', w: 'paint', m: 'model', k: 'trailer', x: 'assetErase', h: 'pan' };
+    const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', w: 'paint', m: 'model', k: 'trailer', j: 'mission', x: 'assetErase', h: 'pan' };
     const k = e.key.toLowerCase();
     if (shortcuts[k]) {
       if (previewMode) setPreviewMode(false);
@@ -2258,7 +3010,7 @@
     }
   });
 
-  document.querySelectorAll('#tools .tool').forEach(function (b) {
+  document.querySelectorAll('.tool').forEach(function (b) {
     b.addEventListener('click', function () { setTool(b.dataset.tool); });
   });
   $('undoBtn').addEventListener('click', undo);
@@ -2302,12 +3054,50 @@
   $('shotCancelBtn').addEventListener('click', closeShotDialog);
   $('shotSaveBtn').addEventListener('click', saveShot);
   $('shotDeleteBtn').addEventListener('click', deleteActiveShot);
+  $('missionNewBtn').addEventListener('click', function () { openMissionDialog(-1); });
+  $('missionToolBtn').addEventListener('click', function () {
+    if (previewMode) setPreviewMode(false);
+    setTool('mission');
+    setMessage('Click the map to add waypoints; double-click a waypoint to edit it.');
+  });
+  $('missionKmlBtn').addEventListener('click', function () { $('kmlInput').click(); });
+  $('kmlInput').addEventListener('change', function () {
+    if ($('kmlInput').files && $('kmlInput').files[0]) importMapFile($('kmlInput').files[0]);
+    $('kmlInput').value = '';
+  });
+  $('missionCancelBtn').addEventListener('click', closeMissionDialog);
+  $('missionSaveBtn').addEventListener('click', saveMission);
+  $('missionDeleteBtn').addEventListener('click', deleteActiveMission);
+  $('missionAddWpBtn').addEventListener('click', function () {
+    closeMissionDialog();
+    setTool('mission');
+    setMessage('Click the map to add a waypoint.');
+  });
+  $('wpAction').addEventListener('change', updateWaypointDialogFields);
+  $('wpCancelBtn').addEventListener('click', closeWaypointDialog);
+  $('wpSaveBtn').addEventListener('click', saveWaypoint);
+  $('wpDeleteBtn').addEventListener('click', deleteActiveWaypoint);
   $('blenderSendBtn').addEventListener('click', openBlenderDialog);
   $('blenderCloseBtn').addEventListener('click', function () { $('blenderDialog').hidden = true; });
   $('blenderPatchBtn').addEventListener('click', downloadCurrentPatchJSON);
   $('blenderImportBtn').addEventListener('click', function () {
     $('blenderDialog').hidden = true;
     $('importInput').click();
+  });
+  $('generatedModelBtn').addEventListener('click', function () {
+    $('generatedModelInput').click();
+  });
+  $('generatedModelInput').addEventListener('change', async function () {
+    const file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      $('blenderDialog').hidden = true;
+      applyGeneratedAsset(data);
+    } catch (e) {
+      setMessage('Could not read generated model JSON: ' + (e && e.message ? e.message : e));
+    }
   });
   $('roadWidth').addEventListener('input', function () { $('roadWidthOut').textContent = $('roadWidth').value; render(); });
   $('treeScale').addEventListener('input', function () { $('treeScaleOut').textContent = Number($('treeScale').value).toFixed(1); });
@@ -2370,6 +3160,7 @@
       challenges: clone(baked.challenges),
       assets: [],
       trailerShots: [],
+      missions: [],
       elevation: { hills: [], points: [], grid: null }
     });
     buildTerrain();
@@ -2388,8 +3179,110 @@
   });
   window.addEventListener('resize', resize);
 
+  /* ---------- application menu ---------- */
+  function initMenuBar() {
+    const bar = $('menuBar');
+    if (!bar) return;
+    const menus = Array.prototype.slice.call(bar.querySelectorAll('.menu'));
+
+    function setOpen(menu, open) {
+      menu.classList.toggle('open', open);
+      const title = menu.querySelector('.menuTitle');
+      if (title) title.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function closeAll() {
+      menus.forEach(function (menu) { setOpen(menu, false); });
+    }
+
+    menus.forEach(function (menu) {
+      const title = menu.querySelector('.menuTitle');
+      title.addEventListener('click', function (e) {
+        e.stopPropagation();
+        const wasOpen = menu.classList.contains('open');
+        closeAll();
+        if (!wasOpen) setOpen(menu, true);
+      });
+    });
+
+    function runItem(item) {
+      closeAll();
+      if (item.dataset.target) {
+        const target = document.querySelector(item.dataset.target);
+        if (target) target.click();
+        return;
+      }
+      if (item.dataset.menuTool) {
+        const toolBtn = document.querySelector('.tool[data-tool="' + item.dataset.menuTool + '"]');
+        if (toolBtn) toolBtn.click();
+        return;
+      }
+      if (item.dataset.key) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: item.dataset.key, bubbles: true }));
+        return;
+      }
+      if (item.dataset.menuStyle) {
+        if (!previewMode) setPreviewMode(true);
+        const styleBtn = document.querySelector('#renderTools .style[data-style="' + item.dataset.menuStyle + '"]');
+        if (styleBtn) styleBtn.click();
+        return;
+      }
+      if (item.dataset.menuTransform) {
+        if (!previewMode) setPreviewMode(true);
+        setTransformMode(item.dataset.menuTransform);
+        return;
+      }
+      const action = item.dataset.action;
+      if (action === 'fullscreen') toggleFullscreen();
+      else if (action === 'help') {
+        const help = document.querySelector('#sidebar section.help');
+        if (help && help.scrollIntoView) help.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setMessage('Editor guide shown in the sidebar.');
+      } else if (action === 'open-game') {
+        window.open('index.html', '_blank');
+      }
+    }
+
+    bar.querySelectorAll('.menuItem').forEach(function (item) {
+      item.addEventListener('click', function (e) {
+        e.stopPropagation();
+        runItem(item);
+      });
+    });
+    document.addEventListener('click', closeAll);
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && bar.querySelector('.menu.open')) {
+        e.stopImmediatePropagation();
+        closeAll();
+      }
+    }, true);
+    document.addEventListener('fullscreenchange', function () {
+      const item = $('fullscreenItem');
+      if (!item) return;
+      const label = item.childNodes[0];
+      if (label && label.nodeType === 3) {
+        label.textContent = document.fullscreenElement ? 'Exit full screen ' : 'Enter full screen ';
+      }
+    });
+  }
+
+  function toggleFullscreen() {
+    const root = document.documentElement;
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      return;
+    }
+    if (!root.requestFullscreen) {
+      setMessage('This browser does not support element full screen — use F11.');
+      return;
+    }
+    root.requestFullscreen().catch(function () {
+      setMessage('Full screen was blocked by the browser — press F11.');
+    });
+  }
+
   /* ---------- boot ---------- */
   function boot() {
+    initMenuBar();
     fillModelSelect($('modelKey'), MODEL_KEYS[0]);
     fillModelSelect($('assetModel'), MODEL_KEYS[0]);
     fillModelSelect($('selModel'), MODEL_KEYS[0]);
@@ -2417,6 +3310,8 @@
       if (CC.MapPreview3D.setStyleMode) CC.MapPreview3D.setStyleMode('game');
     }
     renderShotList();
+    renderMissionList();
+    renderMissionWaypointList();
     resize();
     fitView();
     if (currentPatch()) setMessage('Editing the patch in js/MapEdits.js.');

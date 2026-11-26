@@ -219,24 +219,23 @@
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const x = 24 + col * 124, y = 46 + row * 142;
-        g.fillStyle = 'rgba(36,31,27,0.8)';
+        g.fillStyle = 'rgba(36,24,14,0.8)';
         g.fillRect(x - 4, y - 4, 80, 86);
-        g.fillStyle = '#172b35';
+        g.fillStyle = '#2b2014';
         g.fillRect(x, y, 72, 78);
-        g.fillStyle = 'rgba(150,186,198,0.18)';
+        g.fillStyle = 'rgba(255,190,90,0.14)';
         g.fillRect(x + 4, y + 4, 30, 70);
-        g.strokeStyle = 'rgba(230,222,200,0.55)';
+        g.strokeStyle = 'rgba(244,211,138,0.62)';
         g.lineWidth = 2;
         g.strokeRect(x, y, 72, 78);
         g.beginPath(); g.moveTo(x + 36, y); g.lineTo(x + 36, y + 78); g.stroke();
-        if (random() < 0.46) {
-          const warm = random() < 0.72;
-          e.fillStyle = warm ? '#ffd88a' : '#d8ecff';
-          e.globalAlpha = 0.65 + random() * 0.35;
+        if (random() < 0.62) {
+          // Cutscene windows are amber pixel grids, never cold blue.
+          e.fillStyle = random() < 0.5 ? '#ffcf72' : '#f39c3c';
+          e.globalAlpha = 0.72 + random() * 0.28;
           e.fillRect(x + 2, y + 2, 68, 74);
           e.globalAlpha = 1;
-          // A soft bloom border keeps the window from looking like a decal.
-          e.strokeStyle = warm ? 'rgba(255,190,80,0.45)' : 'rgba(180,220,255,0.4)';
+          e.strokeStyle = 'rgba(255,194,90,0.5)';
           e.lineWidth = 7;
           e.strokeRect(x, y, 72, 78);
         }
@@ -495,9 +494,9 @@
       const material = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: map,
-        emissive: 0xffd796,
+        emissive: 0xffc25a,
         emissiveMap: emissiveMap,
-        emissiveIntensity: nightAmount * 1.45,
+        emissiveIntensity: 0.26 + nightAmount * 1.35,
         roughness: 0.88,
         metalness: 0.02,
         flatShading: true
@@ -514,7 +513,7 @@
       // while daylight is steady or the night level has not visibly moved.
       if (Math.abs(next - nightAmount) < 0.005) return nightAmount;
       nightAmount = next;
-      facadeMaterials.forEach(function (m) { m.emissiveIntensity = nightAmount * 1.45; });
+      facadeMaterials.forEach(function (m) { m.emissiveIntensity = 0.26 + nightAmount * 1.35; });
       return nightAmount;
     },
 

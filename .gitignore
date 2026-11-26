@@ -1,5 +1,7 @@
 node_modules/
 capture/
+music compressed/
+tools/__pycache__/
 *.webm
 *.mp4
 .DS_Store

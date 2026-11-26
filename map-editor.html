@@ -7,6 +7,95 @@
   <link rel="stylesheet" href="map-editor.css" />
 </head>
 <body>
+  <nav id="menuBar" aria-label="Application menu">
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">Map Editor</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-action="open-game">Open game <span class="shortcut">index.html</span></button>
+        <button class="menuItem" id="fullscreenItem" data-action="fullscreen">Enter full screen <span class="shortcut">F11</span></button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-action="help">Editor guide</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">File</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-target="#newMapBtn">New map</button>
+        <button class="menuItem" data-target="#loadBtn">Load patch…</button>
+        <button class="menuItem" data-target="#importBtn">Import data…</button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-target="#applyBtn">Apply to game <span class="shortcut">MapEdits.js</span></button>
+        <button class="menuItem" data-target="#copyBtn">Copy patch JS</button>
+        <button class="menuItem" data-target="#newGameBtn">Create game folder…</button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-target="#resetBtn">Reset to game map</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">Edit</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-target="#undoBtn">Undo <span class="shortcut">Ctrl+Z</span></button>
+        <button class="menuItem" data-target="#redoBtn">Redo <span class="shortcut">Ctrl+Y</span></button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-key="Delete">Delete selection <span class="shortcut">Del</span></button>
+        <button class="menuItem" data-key="Escape">Clear selection <span class="shortcut">Esc</span></button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-menu-tool="roadErase">Erase road <span class="shortcut">E</span></button>
+        <button class="menuItem" data-menu-tool="assetErase">Erase asset <span class="shortcut">X</span></button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">View</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-target="#view2DBtn">2D / 3D <span class="shortcut">P</span></button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-target="#zoomInBtn">Zoom in <span class="shortcut">+</span></button>
+        <button class="menuItem" data-target="#zoomOutBtn">Zoom out <span class="shortcut">−</span></button>
+        <button class="menuItem" data-target="#zoomFitBtn">Fit whole map <span class="shortcut">0</span></button>
+        <button class="menuItem" data-target="#gridBtn">Grid</button>
+        <button class="menuItem" data-menu-tool="pan">Pan tool <span class="shortcut">H</span></button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-menu-style="game">Game style</button>
+        <button class="menuItem" data-menu-style="realistic">Realistic preview</button>
+        <div class="menuSep"></div>
+        <button class="menuItem" data-menu-transform="view">Transform: View <span class="shortcut">1</span></button>
+        <button class="menuItem" data-menu-transform="move">Transform: Move <span class="shortcut">2</span></button>
+        <button class="menuItem" data-menu-transform="rotate">Transform: Rotate <span class="shortcut">3</span></button>
+        <button class="menuItem" data-menu-transform="scale">Transform: Scale <span class="shortcut">4</span></button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">Tools</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-menu-tool="select">Select / move <span class="shortcut">V</span></button>
+        <button class="menuItem" data-menu-tool="road">Draw road <span class="shortcut">B</span></button>
+        <button class="menuItem" data-menu-tool="roadErase">Erase road <span class="shortcut">E</span></button>
+        <button class="menuItem" data-menu-tool="building">Place building <span class="shortcut">R</span></button>
+        <button class="menuItem" data-menu-tool="bridge">Draw bridge <span class="shortcut">G</span></button>
+        <button class="menuItem" data-menu-tool="tree">Place tree <span class="shortcut">T</span></button>
+        <button class="menuItem" data-menu-tool="paint">Paint brush <span class="shortcut">W</span></button>
+        <button class="menuItem" data-menu-tool="model">Place baked model <span class="shortcut">M</span></button>
+        <button class="menuItem" data-menu-tool="trailer">Script trailer shot <span class="shortcut">K</span></button>
+        <button class="menuItem" data-menu-tool="mission">Plan INAV waypoint mission <span class="shortcut">J</span></button>
+        <button class="menuItem" data-menu-tool="assetErase">Erase asset <span class="shortcut">X</span></button>
+        <button class="menuItem" data-menu-tool="pan">Pan <span class="shortcut">H</span></button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">Blender</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-target="#blenderSendBtn">Round-trip commands</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menuTitle" aria-haspopup="true" aria-expanded="false">Help</button>
+      <div class="menuPopup">
+        <button class="menuItem" data-action="help">Editor guide</button>
+        <button class="menuItem" data-action="open-game">Open game</button>
+      </div>
+    </div>
+  </nav>
+
   <header id="toolbar">
     <div class="brand">COASTAL CRUISE <span>MAP EDITOR</span></div>
     <div class="toolgroup" id="tools">
@@ -19,8 +108,8 @@
       <button class="tool" data-tool="paint" title="Paint brush: drag to stamp trees or models (W)">🖌 <span>Paint</span></button>
       <button class="tool" data-tool="model" title="Place a baked Blender/baked model (M)">◈ <span>Model</span></button>
       <button class="tool" data-tool="trailer" title="Script a trailer shot: click start, then finish (K)">▶ <span>Trailer</span></button>
+      <button class="tool" data-tool="mission" title="Add INAV waypoints: click the map (J)">⌖ <span>Mission</span></button>
       <button class="tool" data-tool="assetErase" title="Erase an asset (X)">✕ <span>Erase asset</span></button>
-      <button class="tool" data-tool="pan" title="Pan the map (H)">✥ <span>Pan</span></button>
     </div>
     <div class="toolgroup">
       <button id="undoBtn" title="Undo (Ctrl+Z)">↶</button>
@@ -29,6 +118,7 @@
       <button id="zoomInBtn" title="Zoom in (+)">＋</button>
       <button id="zoomOutBtn" title="Zoom out (-)">－</button>
       <button id="zoomFitBtn" title="Fit whole map (0)">⤢</button>
+      <button id="panBtn" class="tool" data-tool="pan" title="Pan the map (H)">✥ <span>Pan</span></button>
     </div>
     <div class="toolgroup" id="viewTools">
       <button id="preview3DBtn" class="toggle" title="3D preview (P)">◱ <span>3D preview</span></button>
@@ -45,7 +135,6 @@
       </div>
     </div>
     <div class="toolgroup right">
-      <button id="view2DBtn" class="toggle on" title="Toggle 2D editor / 3D preview (P)">▦ <span>2D / 3D</span></button>
       <button id="blenderSendBtn" title="Open Blender round-trip commands">🧊 <span>Blender</span></button>
       <button id="newGameBtn" title="Start a standalone game in a new folder">🏗 <span>New game</span></button>
       <button id="newMapBtn" title="Start a blank map project">✚ <span>New map</span></button>
@@ -53,12 +142,19 @@
       <button id="resetBtn" title="Discard edits and reload the current game map">↺ <span>Reset</span></button>
       <button id="loadBtn" title="Load an existing MapEdits.js patch">📂 <span>Load patch</span></button>
       <button id="copyBtn" title="Copy generated patch JS to clipboard">⧉ <span>Copy JS</span></button>
-      <button id="applyBtn" class="primary" title="Export the patch the game will load">✔ <span>Apply to game</span></button>
       <input type="file" id="loadInput" accept=".js,.json,.txt" hidden />
-      <input type="file" id="importInput" accept=".osm,.xml,.json,.geojson,.txt" hidden />
+      <input type="file" id="importInput" accept=".osm,.xml,.kml,.json,.geojson,.txt" hidden />
       <input type="file" id="sourceFolderInput" webkitdirectory directory multiple hidden />
     </div>
   </header>
+
+  <!-- Pinned outside the scrollable toolbar so the view switch and export
+       button are always visible in the upper-right corner, even on narrow
+       windows. -->
+  <div id="viewToggleDock">
+    <button id="view2DBtn" class="toggle on" title="Toggle 2D editor / 3D preview (P)">▦ <span>2D / 3D</span></button>
+    <button id="applyBtn" class="primary" title="Export the patch the game will load">✔ <span>Apply to game</span></button>
+  </div>
 
   <main>
     <div id="canvasWrap">
@@ -139,6 +235,20 @@
       </section>
 
       <section>
+        <h2>INAV MISSIONS</h2>
+        <div id="missionList" class="shotList"><div class="empty">No missions yet.</div></div>
+        <div class="row">
+          <button id="missionNewBtn" class="small">New mission</button>
+          <button id="missionToolBtn" class="small">Add waypoint (J)</button>
+        </div>
+        <div class="row">
+          <button id="missionKmlBtn" class="small">Import KML…</button>
+        </div>
+        <p>Altitudes are cm above mission home; speeds are cm/s. Add waypoints by clicking the map, drag to move, then use Edit for action, hold, jump and POI. Final action is RTH.</p>
+        <input type="file" id="kmlInput" accept=".kml,text/xml,application/vnd.google-earth.kml+xml" hidden />
+      </section>
+
+      <section>
         <h2>LAYERS</h2>
         <label class="check"><input id="showRoads" type="checkbox" checked /> Roads</label>
         <label class="check"><input id="showBuildings" type="checkbox" checked /> Buildings</label>
@@ -149,11 +259,12 @@
 
       <section class="help">
         <h2>HOW TO APPLY</h2>
-        <p>The editor loads the same baked game map: the 2D backdrop is the exact ground canvas used in-game, and roads, buildings, landmarks and coast rules come from the same runtime map data. <b>Reset</b> discards the current edit patch and reloads that game map.</p>
+        <p>The editor fills the browser window and has a native-style menu bar across the top. Every menu item runs the same command as its toolbar button; <b>Map Editor → Full screen</b> (or <b>F11</b>) enters true browser full screen. The 2D backdrop is the exact ground canvas used in-game, and roads, buildings, landmarks and coast rules come from the same runtime map data. <b>Reset</b> discards the current edit patch and reloads that game map.</p>
         <p><b>Apply to game</b> downloads <code>MapEdits.js</code>. Save it over <code>js/MapEdits.js</code>, then hard-refresh <code>index.html</code>. The editor can also write the file directly if your browser supports it. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
         <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck. <b>Paint</b> (<b>W</b>) works like a Photoshop brush: drag to stamp trees or baked models; the Brush panel controls size, spacing, scatter and scale.</p>
-        <p><b>2D / 3D</b> (or <b>P</b>) toggles the editor view. The 3D preview renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. Use <b>Game / Realistic</b> to switch between the in-game PS2 look and softer Blender/Unreal-style lighting, shadows and building facades. Use <b>View / Move / Rotate / Scale</b> (keys <b>1–4</b>) for Blender-like gizmo editing of the selected building, landmark or model. For exact Blender geometry, place a baked <b>Model</b> asset; plain <b>Building</b> entries are detailed facades generated from their map dimensions.</p>
+        <p><b>2D / 3D</b> (or <b>P</b>) toggles the editor view. Use the <b>Pan</b> button beside the zoom controls (or <b>H</b> / middle-drag) to drag the map around when it is enlarged. The 3D preview renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. Use <b>Game / Realistic</b> to switch between the in-game PS2 look and softer Blender/Unreal-style lighting, shadows and building facades. Use <b>View / Move / Rotate / Scale</b> (keys <b>1–4</b>) for Blender-like gizmo editing of the selected building, landmark or model. For exact Blender geometry, place a baked <b>Model</b> asset; plain <b>Building</b> entries are detailed facades generated from their map dimensions.</p>
         <p><b>Trailer</b> (<b>K</b>): click a start point, then a finish point. Ground vehicles are routed along roads when rendered; aircraft and jetpacks fly straight to the finish. Export the shot JSON and render one clip per shot with <code>npm run trailer -- --shots trailer-shots.json</code>.</p>
+        <p><b>Mission</b> (<b>J</b>) plans an INAV-style FPV flight. Click the map to add waypoints, drag them to move, and use the <b>INAV MISSIONS</b> panel to edit actions (WAYPOINT, POSHOLD_TIME, JUMP, SET_POI, LAND), cm altitudes and cm/s speeds. Altitudes are relative to mission home (the FPV spawn point if left blank); the last action is always RTH. Missions are exported through <b>Apply to game</b>; start one from the game console with <code>CC.MissionPlanner.start(0)</code> and stop it with <code>CC.MissionPlanner.stop()</code>. <b>Import KML…</b> reads Placemark coordinates, name and description; KML altitude becomes cm above the first point.</p>
         <p><b>Blender</b> opens the round-trip helper. The <code>to-blender</code> and <code>to-editor</code> commands carry roads, assets, baked meshes, landmarks, challenges, trailer shots and elevation between Blender 3.6 and this editor.</p>
         <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models, elevation and trailer shots.</p>
       </section>
@@ -168,7 +279,7 @@
   </footer>
 
   <div id="assetDialog" class="modal" hidden>
-    <div class="modalCard">
+    <div class="modalCard wideCard">
       <h2>NEW ASSET</h2>
       <p id="assetDialogType">Building</p>
       <label>Name
@@ -178,8 +289,20 @@
         <select id="assetModel"></select>
       </label>
       <label>Description
-        <textarea id="assetDesc" rows="4" placeholder="Describe this asset (e.g. waterfront warehouse, pine tree, footbridge)"></textarea>
+        <textarea id="assetDesc" rows="3" placeholder="Describe this asset (e.g. waterfront warehouse, pine tree, footbridge)"></textarea>
       </label>
+      <label class="checkRow">
+        <input id="assetGenerate" type="checkbox" />
+        <span>Generate a new model with Blender 3.6 from a detailed prompt</span>
+      </label>
+      <label id="assetPromptRow" hidden>Detailed prompt
+        <textarea id="assetPrompt" rows="4" placeholder="Low-poly weathered harbor lighthouse, red and white bands, 14 m tall, warm amber lantern, tin roof"></textarea>
+      </label>
+      <p id="assetGenerateHint" class="promptHint" hidden>
+        Blender 3.6 has no built-in text-to-3D or required MCP add-on. The prompt is handed to
+        a local <code>bpy</code> generator. After the helper finishes, import its result JSON from
+        the Blender round-trip dialog; the model lands at this asset's current map position.
+      </p>
       <div class="modalButtons">
         <button id="assetCancelBtn">Cancel</button>
         <button id="assetCreateBtn" class="primary">Create asset</button>
@@ -272,6 +395,77 @@
     </div>
   </div>
 
+  <div id="missionDialog" class="modal" hidden>
+    <div class="modalCard wideCard">
+      <h2>INAV MISSION</h2>
+      <p>Altitude is cm relative to mission home; speed is cm/s. Actions are WAYPOINT, POSHOLD_TIME, JUMP, SET_POI and LAND, followed by a final RTH.</p>
+      <label>Name <input id="missionName" type="text" /></label>
+      <div class="row">
+        <label>Home X (blank = FPV spawn) <input id="missionHomeX" type="number" step="1" /></label>
+        <label>Home Z <input id="missionHomeZ" type="number" step="1" /></label>
+      </div>
+      <div class="row">
+        <label>nav_wp_radius (cm) <input id="missionRadius" type="number" min="50" step="10" value="200" /></label>
+        <label>nav_wp_safe_distance (cm) <input id="missionSafeDistance" type="number" min="0" step="10" value="500" /></label>
+      </div>
+      <label class="check"><input id="missionEnforceAltitude" type="checkbox" checked /> nav_wp_enforce_altitude</label>
+      <label>Final action <select id="missionFinalAction"><option value="RTH">RTH — return home and land</option></select></label>
+      <h3>WAYPOINTS</h3>
+      <div id="missionWaypointList" class="shotList"></div>
+      <div class="row">
+        <button id="missionAddWpBtn" class="small">Add on map (J)</button>
+      </div>
+      <div class="modalButtons">
+        <button id="missionDeleteBtn" class="danger">Delete mission</button>
+        <button id="missionCancelBtn">Cancel</button>
+        <button id="missionSaveBtn" class="primary">Save mission</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wpDialog" class="modal" hidden>
+    <div class="modalCard wideCard">
+      <h2>WAYPOINT ACTION</h2>
+      <p>JUMP uses a 1-based waypoint number. SET_POI stores a look-at point in game X/Z/Y coordinates without moving.</p>
+      <div class="row">
+        <label>Action
+          <select id="wpAction">
+            <option value="WAYPOINT">WAYPOINT</option>
+            <option value="POSHOLD_TIME">POSHOLD_TIME</option>
+            <option value="JUMP">JUMP</option>
+            <option value="SET_POI">SET_POI</option>
+            <option value="LAND">LAND</option>
+          </select>
+        </label>
+        <label>Name (optional) <input id="wpName" type="text" /></label>
+      </div>
+      <div class="row">
+        <label>X <input id="wpX" type="number" step="1" /></label>
+        <label>Z <input id="wpZ" type="number" step="1" /></label>
+      </div>
+      <div class="row" id="wpAltRow">
+        <label>Altitude (cm, home-relative) <input id="wpAltCm" type="number" step="100" value="500" /></label>
+        <label>Speed (cm/s) <input id="wpSpeedCmS" type="number" min="0" step="100" value="1500" /></label>
+      </div>
+      <div class="row" id="wpHoldRow" hidden>
+        <label>Hold (sec) <input id="wpHoldSec" type="number" min="0" step="0.5" value="2" /></label>
+      </div>
+      <div class="row" id="wpJumpRow" hidden>
+        <label>Jump to waypoint # (1-based) <input id="wpJumpTarget" type="number" min="1" step="1" value="1" /></label>
+      </div>
+      <div class="row" id="wpPoiRow" hidden>
+        <label>POI X <input id="wpPoiX" type="number" step="1" /></label>
+        <label>POI Z <input id="wpPoiZ" type="number" step="1" /></label>
+        <label>POI Y <input id="wpPoiY" type="number" step="1" /></label>
+      </div>
+      <div class="modalButtons">
+        <button id="wpDeleteBtn" class="danger">Delete waypoint</button>
+        <button id="wpCancelBtn">Cancel</button>
+        <button id="wpSaveBtn" class="primary">Save waypoint</button>
+      </div>
+    </div>
+  </div>
+
   <div id="blenderDialog" class="modal" hidden>
     <div class="modalCard wideCard">
       <h2>BLENDER 3.6 ROUND TRIP</h2>
@@ -282,10 +476,18 @@
       <label>Blender → editor
         <code id="blenderFromCode">node tools/blender-map-bridge.js to-editor map.blend patch.json</code>
       </label>
+      <div id="blenderGenerateRow" hidden>
+        <label>Prompt job → Blender 3.6
+          <code id="blenderGenerateCode"></code>
+        </label>
+        <p>Run that command from the Coastal Cruise folder, then import the generated result below. No MCP add-on is required.</p>
+      </div>
       <p>Roads, assets, baked meshes, landmarks, challenges, trailer shots and elevation are preserved. Override the Blender path with <code>BLENDER=/path/to/blender</code>.</p>
       <div class="modalButtons">
         <button id="blenderPatchBtn">Download patch JSON</button>
         <button id="blenderImportBtn">Import Blender JSON</button>
+        <button id="generatedModelBtn">Import generated model</button>
+        <input id="generatedModelInput" type="file" accept=".json,application/json" hidden />
         <button id="blenderCloseBtn" class="primary">Done</button>
       </div>
     </div>
@@ -297,6 +499,7 @@
   <script src="js/MapEdits.js"></script>
   <script src="js/GeneratedAssets.js"></script>
   <script src="js/DownloadedAssets.js"></script>
+  <script src="js/CustomModels.js"></script>
   <script src="js/AssetLoader.js"></script>
   <script src="js/imagemap.js"></script>
   <script src="js/MapPreview3D.js"></script>

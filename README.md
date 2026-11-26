@@ -97,10 +97,31 @@ current patch as JSON. After exporting from Blender, use **Import data** (or
 preserves roads, buildings, bridges, trees, baked models, elevation, landmarks,
 challenges and trailer shots.
 
-The importer reads the model geometry embedded in `GeneratedAssets.js` and
-`DownloadedAssets.js`, so cars, houses, pines and downloaded rocks appear as
-visible meshes in Blender. Each placement gets a tagged parent empty; the
-child `part_*` meshes are display-only, so exporting again produces the same
+### Prompt-generated models
+
+The **New Asset** dialog can hand a detailed prompt to Blender 3.6 without MCP
+or a network connection. Enable **Generate a new model with Blender 3.6**,
+enter the prompt, and create the asset at the clicked map position. The editor
+places a pending model marker, downloads a `.aiasset.json` job, and shows the
+exact helper command. Run it from the Coastal Cruise folder:
+
+```bash
+node tools/blender-ai-asset.js generate ~/Downloads/<name>.aiasset.json \
+  --out capture/generated-<key>.json
+```
+
+Blender runs `tools/blender_prompt_asset.py` headless, bakes the low-poly result
+into `js/CustomModels.js`, and writes a result JSON. Back in the open editor,
+use **Blender 3.6 Round Trip → Import generated model** on that result. The
+model appears immediately at the original map position and can be dragged like
+any other placed model. `CustomModels.js` is loaded by both `index.html` and
+`map-editor.html`, so exported maps keep working from `file://`.
+
+The importer reads the model geometry embedded in `GeneratedAssets.js`,
+`DownloadedAssets.js` and `CustomModels.js`, so cars, houses, pines, downloaded
+rocks and prompt-generated props appear as visible meshes in Blender. Each
+placement gets a tagged parent empty; the child `part_*` meshes are
+display-only, so exporting again produces the same
 patch rather than duplicating assets.
 
 Set `cc_type` on objects to `road`, `building`, `bridge`, `tree`, `model`,
@@ -384,6 +405,9 @@ tools/trailer-runtime.js browser-side camera/input timeline, road-following shot
 tools/blender_map_import.py map patch -> Blender 3.6 scene
 tools/blender_map_export.py Blender scene -> map patch
 tools/blender-map-bridge.js one-command Blender round-trip helper
+js/CustomModels.js      baked prompt-generated Blender props (generated)
+tools/blender-ai-asset.js downloads a prompt job, runs Blender, registers the model
+tools/blender_prompt_asset.py offline Blender 3.6 prompt -> low-poly mesh generator
 js/MapPreview3D.js editor 3D preview + selection/move/rotate/scale gizmos
 js/AssetLoader.js baked mesh batching, materials and prop building
 js/world.js       terrain, roads, landmarks, homes, trees, props, gates, particles

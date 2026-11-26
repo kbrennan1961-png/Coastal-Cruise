@@ -5,17 +5,18 @@
     --save /tmp/coastal-map.blend
 
 By default this builds real meshes from the baked model bundles in
-js/GeneratedAssets.js and js/DownloadedAssets.js, so placed vehicles, houses,
-pines and rocks are visible in Blender. Every placement gets a tagged parent
+js/GeneratedAssets.js, js/DownloadedAssets.js and js/CustomModels.js, so placed
+vehicles, houses, pines, rocks and prompt-generated props are visible in Blender.
+Every placement gets a tagged parent
 empty so blender_map_export.py can round-trip it. Use --proxies for the old
 lightweight empties/cones instead.
 
 Tagged objects carry cc_type values road, building, bridge, tree, model,
 elevation, landmark and challenge. Landmarks/challenges are empties whose
 cc_data JSON string holds the full original object (cc_id/cc_name are also
-set for readability). Scene custom properties cc_trailer_shots and
-cc_patch_meta hold JSON text for patch trailerShots and other patch metadata
-so blender_map_export.py can restore them verbatim.
+set for readability). Scene custom properties cc_trailer_shots, cc_missions
+and cc_patch_meta hold JSON text for patch trailerShots, INAV flight plans
+and other patch metadata so blender_map_export.py can restore them verbatim.
 
 Options:
   --clear            Delete current objects before importing.
@@ -58,6 +59,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUNDLES = (
     (os.path.join(ROOT, 'js', 'GeneratedAssets.js'), 'CC.GeneratedAssets ='),
     (os.path.join(ROOT, 'js', 'DownloadedAssets.js'), 'const data ='),
+    (os.path.join(ROOT, 'js', 'CustomModels.js'), 'CC.CustomModels ='),
 )
 PART_CACHE = {}
 MATERIAL_CACHE = {}
@@ -496,9 +498,13 @@ def main():
         scene['cc_trailer_shots'] = json_text(patch['trailerShots'])
     elif 'cc_trailer_shots' in scene.keys():
         del scene['cc_trailer_shots']
+    if 'missions' in patch:
+        scene['cc_missions'] = json_text(patch['missions'])
+    elif 'cc_missions' in scene.keys():
+        del scene['cc_missions']
 
     data_keys = {'roads', 'buildings', 'assets', 'elevation', 'landmarks',
-                 'challenges', 'trailerShots'}
+                 'challenges', 'trailerShots', 'missions'}
     meta = {key: value for key, value in patch.items() if key not in data_keys}
     if meta:
         scene['cc_patch_meta'] = json_text(meta)

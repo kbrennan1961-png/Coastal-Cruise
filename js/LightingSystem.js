@@ -57,17 +57,20 @@
     '}'
   ].join('\n');
 
-  const sunBase = new THREE.Color(0xffd2a0);
-  const sunGolden = new THREE.Color(0xff9b52);
+  // Warm pre-sunset palette sampled from the approved harbor intro. The light
+  // is amber but not yet orange, with a rose-violet fill, so buildings keep the
+  // video's warm windows without turning the whole town red.
+  const sunBase = new THREE.Color(0xffd39a);
+  const sunGolden = new THREE.Color(0xffc178);
   const sunDusk = new THREE.Color(0xff714d);
   const sunNight = new THREE.Color(0xa8c8ff);
-  const hemiBase = new THREE.Color(0xffe4bb);
-  const hemiGolden = new THREE.Color(0xffc48f);
+  const hemiBase = new THREE.Color(0xffd9b6);
+  const hemiGolden = new THREE.Color(0xffd0a0);
   const hemiDusk = new THREE.Color(0xc99ac1);
   const hemiNight = new THREE.Color(0x7897c2);
   const groundBase = new THREE.Color(0x5c7a4d);
   const groundNight = new THREE.Color(0x243a34);
-  const accent = new THREE.Color(0xffa35c);
+  const accent = new THREE.Color(0xe8ad72);
   const tmpTop = new THREE.Color();
   const tmpHorizon = new THREE.Color();
   const tmpBottom = new THREE.Color();
@@ -179,8 +182,8 @@
       // Weather supplies the base palette each frame. Phase colours simply
       // tint it so slider scrubbing and automatic time both transition smoothly.
       tmpHorizon.copy(w.fog ? w.fog.color : new THREE.Color(C.COLORS.fog));
-      accent.setHex(golden > dusk ? 0xffa35c : 0xd7788f);
-      tmpHorizon.lerp(accent, Math.max(golden * 0.42, dusk * 0.36));
+      accent.setHex(golden > dusk ? 0xffc178 : 0xd7788f);
+      tmpHorizon.lerp(accent, Math.max(golden * 0.5, dusk * 0.36, 0.08));
       tmpTop.copy(w.sky || new THREE.Color(C.COLORS.skyTop));
       tmpBottom.copy(tmpHorizon).multiplyScalar(0.74);
 
