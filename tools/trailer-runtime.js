@@ -47,6 +47,9 @@
 
   var originalRead = null;
   var patchedRead = null;
+  var originalLookAt = null;
+  var patchedLookAt = null;
+  var lookAtTarget = null;
   var capture = {
     recorder: null, chunks: [], chain: Promise.resolve(), mime: '', inline: [],
     track: null, originalRender: null, renderPatched: false,
@@ -239,6 +242,48 @@
     return p && isFinite(p.x) && isFinite(p.z) ? p : null;
   }
 
+  function pointXYZ(value) {
+    if (Array.isArray(value)) {
+      return { x: Number(value[0]), y: Number(value[1]), z: Number(value[2]) };
+    }
+    if (value && typeof value === 'object') {
+      var y = value.y !== undefined && value.y !== null ? value.y : value.h;
+      return { x: Number(value.x), y: Number(y), z: Number(value.z) };
+    }
+    return null;
+  }
+
+  function validXYZ(value) {
+    var p = pointXYZ(value);
+    return p && isFinite(p.x) && isFinite(p.y) && isFinite(p.z) ? p : null;
+  }
+
+  /* The game's frame loop calls its private updateCamera(), so patching
+     Game.updateCamera would only affect the one shot-prep call. Wrapping the
+     camera's lookAt() instead catches every rendered frame, in both real-time
+     and deterministic stepFrame capture. */
+  function installLookAt() {
+    if (!G.camera || typeof G.camera.lookAt !== 'function') return;
+    if (!originalLookAt) originalLookAt = G.camera.lookAt;
+    if (!patchedLookAt) {
+      patchedLookAt = function (target) {
+        if (lookAtTarget && G.camTarget) {
+          G.camTarget.set(lookAtTarget.x, lookAtTarget.y, lookAtTarget.z);
+          target = G.camTarget;
+        }
+        return originalLookAt.call(G.camera, target);
+      };
+    }
+    if (G.camera.lookAt !== patchedLookAt) G.camera.lookAt = patchedLookAt;
+  }
+
+  function restoreLookAt() {
+    lookAtTarget = null;
+    if (originalLookAt && G.camera && G.camera.lookAt === patchedLookAt) {
+      G.camera.lookAt = originalLookAt;
+    }
+  }
+
   function shotPoint(shot, key, name) {
     var p = validPoint(shot[key]);
     if (!p) throw new Error('Shot "' + name + '" has an invalid ' + key + ' point');
@@ -354,6 +399,8 @@
     if (units <= 0) units = 1;
 
     prepare();
+    lookAtTarget = validXYZ(shot.lookAt);
+    if (lookAtTarget) installLookAt();
     try {
       if (mode === 'road') {
         var road = roadPath(shot, start, finish, name);
@@ -387,6 +434,7 @@
       T.mode = 'manual';
       T.manual = makeInput();
       if (originalRead && G.readInput === patchedRead) G.readInput = originalRead;
+      restoreLookAt();
     }
   }
 

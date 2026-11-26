@@ -58,12 +58,15 @@
 </head>
 <body>
 <canvas id="screen" width="320" height="240"></canvas>
-<canvas id="fpvHud" width="320" height="240"></canvas>
+<!-- The scene stays 320x240 for the PSX look; the telemetry is drawn at
+     display resolution so the text and linework stay sharp. -->
+<canvas id="fpvHud" width="1280" height="960"></canvas>
 <div id="title"><h1>THE HARBOR</h1><p>NORTH CAROLINA · 1998</p></div>
 <div id="hint">Click or press any key to replay</div>
 
 <!-- Vendored Three.js: keeps the cutscene fully offline, no CDN/network. -->
 <script src="js/vendor/three.min.js"></script>
+<script src="js/MissionShots.js"></script>
 <script>
 (function () {
 'use strict';
@@ -72,12 +75,27 @@
    0. CONSTANTS & DOM
    ========================================================================= */
 var W = 320, H = 240;                 // native PSX-ish framebuffer
-var CLIP_DURATION = 16.0;             // seconds, three acts
+var DEFAULT_CLIP_DURATION = 16.0;     // seconds, three acts
+var CLIP_DURATION = DEFAULT_CLIP_DURATION;
 var canvas = document.getElementById('screen');
 var hudCanvas = document.getElementById('fpvHud');
 var hudCtx = hudCanvas.getContext('2d');
-hudCtx.imageSmoothingEnabled = false;
 var titleEl = document.getElementById('title');
+
+/* The telemetry overlay is a separate, full-resolution canvas. The 320x240
+   scene below it is still nearest-neighbour scaled for the PSX look, but HUD
+   text is rasterised at native pixels so it stays crisp in the capture. */
+function resizeHud() {
+  var cw = Math.max(W, Math.round(window.innerWidth || W));
+  var ch = Math.max(H, Math.round(window.innerHeight || H));
+  if (hudCanvas.width !== cw || hudCanvas.height !== ch) {
+    hudCanvas.width = cw;
+    hudCanvas.height = ch;
+  }
+  hudCtx.imageSmoothingEnabled = false;
+}
+resizeHud();
+window.addEventListener('resize', resizeHud);
 
 var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: false,
                                          powerPreference: 'low-power' });
@@ -904,6 +922,87 @@ var lookSky = new THREE.Vector3(0, 220, 46);
 var lookTmp = new THREE.Vector3();
 
 /* =========================================================================
+   11b. INAV SHOT PLAN
+   -------------------------------------------------------------------------
+   The built-in harbor camera is the default. window.__harborIntro.loadShotPlan()
+   can replace it with the shots exported by the map editor / MissionShots.js:
+   each WAYPOINT becomes a linear camera move, POSHOLD_TIME a hover, SET_POI a
+   look target, JUMP a cut and RTH a return. This keeps the live page unchanged
+   while letting offline captures render INAV-authored cutscenes.
+   ========================================================================= */
+var shotPlan = null;
+var PLAN_MIN_SHOT = 0.25;
+
+function planNumber(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  var n = Number(value);
+  return isFinite(n) ? n : fallback;
+}
+
+function planPoint(value, fallback) {
+  fallback = fallback || { x: 0, y: 0, z: 0 };
+  var raw = Array.isArray(value)
+    ? { x: value[0], y: value[2], z: value[1] }
+    : (value || {});
+  var y = raw.y !== undefined && raw.y !== null ? raw.y
+    : (raw.alt !== undefined && raw.alt !== null ? raw.alt : raw.altitude);
+  return {
+    x: planNumber(raw.x, fallback.x),
+    y: planNumber(y, fallback.y),
+    z: planNumber(raw.z, fallback.z)
+  };
+}
+
+function loadShotPlan(plan) {
+  var raw = [];
+  if (Array.isArray(plan)) raw = plan;
+  else if (plan && Array.isArray(plan.shots)) raw = plan.shots;
+  else if (plan && Array.isArray(plan.missions) && CC.MissionShots) {
+    raw = CC.MissionShots.toShots(plan).shots || [];
+  }
+  if (!raw.length) return false;
+
+  var shots = [], cursor = 0;
+  for (var i = 0; i < raw.length; i++) {
+    var s = raw[i] || {};
+    var start = planPoint(s.start, i ? shots[i - 1].finish : null);
+    var finish = planPoint(s.finish || s.start, start);
+    var duration = Math.max(PLAN_MIN_SHOT, planNumber(s.durationSec, 1));
+    shots.push({
+      index: i,
+      start: start,
+      finish: finish,
+      duration: duration,
+      startTime: cursor,
+      action: String(s.action || s.name || ('SHOT ' + (i + 1))),
+      lookAt: s.lookAt ? planPoint(s.lookAt, finish) : null,
+      bank: planNumber(s.bank, 0)
+    });
+    cursor += duration;
+  }
+  shotPlan = { shots: shots, duration: cursor };
+  CLIP_DURATION = cursor;
+  if (hudHome) hudHome.set(shots[0].start.x, LAND_TOP, shots[0].start.z);
+  return true;
+}
+
+function clearShotPlan() {
+  shotPlan = null;
+  CLIP_DURATION = DEFAULT_CLIP_DURATION;
+  if (hudHome) hudHome.set(0, LAND_TOP, 12);
+}
+
+function shotAtTime(t) {
+  if (!shotPlan) return null;
+  var shots = shotPlan.shots;
+  var target = Math.min(CLIP_DURATION, Math.max(0, Number(t) || 0));
+  for (var i = shots.length - 1; i >= 0; i--) {
+    if (target >= shots[i].startTime || i === 0) return shots[i];
+  }
+  return shots[0];
+}
+
+/* =========================================================================
    12. POST-PROCESSING — Bayer 4x4 ordered dithering + 15-bit RGB quantisation
    ========================================================================= */
 var rt = new THREE.WebGLRenderTarget(W, H, {
@@ -992,7 +1091,19 @@ function wrapAngle(a) {
 
 function drawFpvHud(t, dt) {
   var g = hudCtx, w = W, h = H, cx = w / 2, cy = h / 2;
+  g.setTransform(hudCanvas.width / W, 0, 0, hudCanvas.height / H, 0, 0);
+  g.imageSmoothingEnabled = false;
   g.clearRect(0, 0, w, h);
+
+  // Thin dark keyline keeps text readable over bright water without softening
+  // the glyphs. Everything is rasterised at full canvas resolution.
+  function hudText(text, x, y, align) {
+    if (align) g.textAlign = align;
+    g.strokeStyle = 'rgba(3, 12, 17, 0.92)';
+    g.lineWidth = 2;
+    g.strokeText(text, x, y);
+    g.fillText(text, x, y);
+  }
 
   var moved = camera.position.distanceTo(hudPrevPos);
   hudPrevPos.copy(camera.position);
@@ -1006,15 +1117,12 @@ function drawFpvHud(t, dt) {
   var horizonY = pitch * h * 0.4;
   var far = w * 1.6;
 
-  // Artificial horizon ball: blue sky, brown ground, pitch ladder and roll arc.
+  // Artificial horizon linework only. No tinted sky/ground mask: the camera
+  // image stays visible below the horizon and telemetry sits cleanly on top.
   g.save();
   g.translate(cx, cy);
   g.rotate(-roll);
   g.beginPath(); g.rect(-far, -far, far * 2, far * 2); g.clip();
-  g.fillStyle = 'rgba(18, 86, 140, 0.62)';
-  g.fillRect(-far, -far, far * 2, horizonY + far);
-  g.fillStyle = 'rgba(140, 96, 42, 0.68)';
-  g.fillRect(-far, horizonY, far * 2, far * 2);
   g.strokeStyle = 'rgba(232, 255, 244, 0.95)';
   g.lineWidth = 1;
   g.beginPath(); g.moveTo(-far, horizonY); g.lineTo(far, horizonY); g.stroke();
@@ -1067,10 +1175,10 @@ function drawFpvHud(t, dt) {
 
   // Game-map coordinates: exactly six zero-padded digits per axis, N/S and
   // E/W derived from the game's +X east, -Z north convention.
-  g.font = 'bold 7px "Courier New", monospace';
+  g.font = 'bold 8px "Courier New", monospace';
   g.textAlign = 'left'; g.textBaseline = 'top';
-  g.fillStyle = 'rgba(255, 236, 190, 0.95)';
-  g.fillText('LAT ' + fpvCoord(camera.position.z, 'N', 'S') +
+  g.fillStyle = 'rgba(255, 236, 190, 0.98)';
+  hudText('LAT ' + fpvCoord(camera.position.z, 'N', 'S') +
     '  LON ' + fpvCoord(camera.position.x, 'W', 'E'), 4, 5);
 
   var heading = Math.atan2(hudDir.x, hudDir.z);
@@ -1079,8 +1187,8 @@ function drawFpvHud(t, dt) {
   var bearing = Math.atan2(hx, hz);
   var homeDeg = Math.round(((bearing * 180 / Math.PI) + 360) % 360);
   g.textAlign = 'right';
-  g.fillText('HOME ' + String(homeDeg).padStart(3, '0') + '° ' +
-    Math.round(homeDist) + 'm', w - 4, 15);
+  hudText('HOME ' + String(homeDeg).padStart(3, '0') + '° ' +
+    Math.round(homeDist) + 'm', w - 4, 15, 'right');
   g.save();
   g.translate(w - 12, 8);
   g.rotate(wrapAngle(bearing - heading));
@@ -1089,16 +1197,23 @@ function drawFpvHud(t, dt) {
   g.restore();
 
   g.textAlign = 'left';
-  g.fillStyle = 'rgba(232, 255, 244, 0.9)';
-  g.fillText('12 SAT', 4, 27);
-  g.fillText('ALT ' + Math.max(0, Math.round(camera.position.y - LAND_TOP)) + ' m', 4, 37);
-  g.fillText('SPD ' + Math.round(hudSpeed * 3.6) + ' km/h', 4, 47);
+  g.fillStyle = 'rgba(232, 255, 244, 0.98)';
+  hudText('12 SAT', 4, 27);
+  hudText('ALT ' + Math.max(0, Math.round(camera.position.y - LAND_TOP)) + ' m', 4, 37);
+  hudText('SPD ' + Math.round(hudSpeed * 3.6) + ' km/h', 4, 47);
 
-  var act = t < 5 ? 'APPROACH' : (t < 11.5 ? 'ORBIT' : 'ASCENT');
+  var shot = shotPlan ? shotAtTime(t) : null;
+  var label;
+  if (shot) {
+    label = String(shot.index + 1).padStart(2, '0') + ' ' + shot.action;
+  } else {
+    var act = t < 5 ? 'APPROACH' : (t < 11.5 ? 'ORBIT' : 'ASCENT');
+    label = t >= 12.4 ? 'RTH' : 'CAM 0' + (t < 5 ? 1 : t < 11.5 ? 2 : 3) +
+      '/03 · ' + act;
+  }
   g.textAlign = 'center';
-  g.fillStyle = 'rgba(255, 209, 102, 0.9)';
-  g.fillText(t >= 12.4 ? 'RTH' : 'CAM 0' + (t < 5 ? 1 : t < 11.5 ? 2 : 3) +
-    '/03 · ' + act, cx, 5);
+  g.fillStyle = 'rgba(255, 209, 102, 0.98)';
+  hudText(label, cx, 5, 'center');
 
   var pct = Math.max(0, 34 - (t / CLIP_DURATION) * 16);
   var voltage = 14 + (pct / 100) * 2.8;
@@ -1106,8 +1221,8 @@ function drawFpvHud(t, dt) {
   var mm = Math.floor(seconds / 60);
   var ss = String(seconds % 60).padStart(2, '0');
   var color = 'hsl(' + Math.round(pct * 1.2) + ', 92%, 55%)';
-  g.fillStyle = 'rgba(255, 236, 190, 0.95)';
-  g.fillText('HARBOR CAM', cx, h - 27);
+  g.fillStyle = 'rgba(255, 236, 190, 0.98)';
+  hudText('HARBOR CAM', cx, h - 27, 'center');
 
   var bx = cx - 24, by = h - 13, bw = 22, bh = 7;
   g.strokeStyle = color; g.lineWidth = 1;
@@ -1115,11 +1230,10 @@ function drawFpvHud(t, dt) {
   g.fillStyle = color;
   g.fillRect(bx + 1, by + 1, Math.max(0, (bw - 2) * pct / 100), bh - 2);
   g.fillRect(bx + bw + 1, by + 2, 2, 3);
-  g.textAlign = 'left';
-  g.fillText(voltage.toFixed(1) + ' V · ' + mm + ':' + ss, bx + bw + 6, by - 1);
-  g.textAlign = 'right';
+  g.fillStyle = 'rgba(255, 236, 190, 0.98)';
+  hudText(voltage.toFixed(1) + ' V · ' + mm + ':' + ss, bx + bw + 6, by - 1, 'left');
   g.fillStyle = color;
-  g.fillText('ACRO', w - 4, by - 1);
+  hudText('ACRO', w - 4, by - 1, 'right');
 
   if (pct <= 20 && !batteryLowShown) {
     batteryLowShown = true;
@@ -1142,6 +1256,7 @@ var clock = new THREE.Clock();
 var elapsed = 0;
 var finished = false;
 var replayRequested = false;
+var captureMode = false;
 
 function updateWater(t) {
   // Scroll the pixel texture and displace vertices with two crossing waves.
@@ -1179,6 +1294,23 @@ function updateGulls(t, dt) {
 }
 
 function updateCamera(tNorm) {
+  if (shotPlan) {
+    var t = Math.min(CLIP_DURATION, Math.max(0, tNorm * CLIP_DURATION));
+    var s = shotAtTime(t);
+    var u = s.duration > 0 ? (t - s.startTime) / s.duration : 0;
+    u = Math.min(1, Math.max(0, u));
+    camera.position.set(
+      s.start.x + (s.finish.x - s.start.x) * u,
+      s.start.y + (s.finish.y - s.start.y) * u,
+      s.start.z + (s.finish.z - s.start.z) * u
+    );
+    var target = s.lookAt || s.finish;
+    lookTmp.set(target.x, target.y, target.z);
+    var shotBank = s.bank;
+    camera.up.set(Math.sin(shotBank), Math.cos(shotBank), 0);
+    camera.lookAt(lookTmp);
+    return;
+  }
   var pos = camCurve.getPointAt(timeToCurveU(Math.min(1, Math.max(0, tNorm))));
   camera.position.copy(pos);
 
@@ -1201,15 +1333,52 @@ function updateCamera(tNorm) {
 }
 
 function updateTitle(t) {
-  // Fade in only during the final act (11.5s - 16s), slow and cinematic.
-  var start = 12.4, end = 15.6;
+  // Fade in only during the final act, slow and cinematic. Shot plans use the
+  // last quarter of their own timeline so the title still lands on the RTH leg.
+  var start = shotPlan ? CLIP_DURATION * 0.775 : 12.4;
+  var end = shotPlan ? CLIP_DURATION * 0.975 : 15.6;
   var a = (t - start) / (end - start);
   a = Math.min(1, Math.max(0, a));
   a = a * a * (3 - 2 * a);
   titleEl.style.opacity = String(a);
 }
 
+/* Deterministic frame stepping for offline capture. The live page still runs
+   from requestAnimationFrame; the capture helper takes over when asked so a
+   16-second cutscene can be encoded at an exact frame rate instead of being
+   screen-recorded in slow-motion software WebGL. */
+function beginCapture() {
+  captureMode = true;
+  elapsed = 0;
+  finished = false;
+  replayRequested = false;
+  batteryLowShown = false;
+  hudMessageUntil = 0;
+  hudSpeed = 0;
+  hudPrevPos.copy(camera.position);
+  titleEl.style.opacity = '0';
+  clock.getDelta();
+}
+
+function renderAt(t, dt) {
+  elapsed = Math.min(CLIP_DURATION, Math.max(0, Number(t) || 0));
+  finished = elapsed >= CLIP_DURATION;
+  var step = Math.max(0, Math.min(0.1, Number(dt) || 1 / 30));
+  updateCamera(elapsed / CLIP_DURATION);
+  updateTitle(elapsed);
+  updateWater(elapsed);
+  updateGulls(elapsed, step);
+
+  renderer.setRenderTarget(rt);
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  renderer.render(postScene, postCam);
+  drawFpvHud(elapsed, step);
+}
+
 function frame() {
+  if (captureMode) return;
   requestAnimationFrame(frame);
   var dt = Math.min(clock.getDelta(), 0.1);
 
@@ -1260,7 +1429,13 @@ window.__harborIntro = {
   get finished() { return finished; },
   get camera() { return camera.position.toArray().map(function (v) { return +v.toFixed(2); }); },
   get batteryLow() { return batteryLowShown; },
-  replay: replay
+  get duration() { return CLIP_DURATION; },
+  get shotPlan() { return shotPlan; },
+  replay: replay,
+  loadShotPlan: loadShotPlan,
+  clearShotPlan: clearShotPlan,
+  beginCapture: beginCapture,
+  renderAt: renderAt
 };
 
 // Prime the camera at the first frame and start.

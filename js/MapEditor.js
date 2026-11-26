@@ -2241,6 +2241,26 @@
     setMessage('Mission saved: ' + m.name + '.');
   }
 
+  /* Turn the active INAV plan into trailer shots. Saving first makes sure the
+     exported camera path matches any edits still open in the dialog. */
+  function downloadMissionShots() {
+    if (!CC.MissionShots) {
+      setMessage('MissionShots.js is not loaded.');
+      return;
+    }
+    if ($('missionDialog').hidden === false) saveMission();
+    const result = CC.MissionShots.toShots({ missions: state.missions },
+      { missionIndex: state.missionEditIndex });
+    if (!result || !result.shots.length) {
+      setMessage('Add waypoints to the mission before exporting trailer shots.');
+      return;
+    }
+    const file = (slugify(result.mission) || 'mission') + '-shots.json';
+    downloadBlob(new Blob([JSON.stringify(result, null, 2)],
+      { type: 'application/json' }), file);
+    setMessage('Downloaded ' + file + ' — render with npm run trailer -- --shots ' + file);
+  }
+
   function deleteActiveMission() {
     const i = state.missionEditIndex;
     if (i < 0 || !state.missions[i]) { closeMissionDialog(); return; }
@@ -3067,6 +3087,7 @@
   });
   $('missionCancelBtn').addEventListener('click', closeMissionDialog);
   $('missionSaveBtn').addEventListener('click', saveMission);
+  $('missionShotsBtn').addEventListener('click', downloadMissionShots);
   $('missionDeleteBtn').addEventListener('click', deleteActiveMission);
   $('missionAddWpBtn').addEventListener('click', function () {
     closeMissionDialog();

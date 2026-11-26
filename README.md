@@ -249,6 +249,32 @@ shot fails with a clear error. Aircraft, jetpacks and FPV drones use
 `"mode": "straight"` and fly directly to the finish `x/z/alt`. Air shots should
 leave `audio` empty and let Filmcraft use one continuous `base_211` track.
 
+### INAV missions as cutscene/trailer camera paths
+
+The map editor's **INAV Mission** dialog has **Export trailer shots**. It saves
+the active waypoint plan as a normal shots file that the trailer harness can
+render. WAYPOINT moves become `straight` camera flights, POSHOLD_TIME becomes a
+timed hover, SET_POI aims the camera at the waypoint's POI, JUMP cuts to the
+target waypoint, LAND descends, and the automatic final RTH flies home. Speed
+and altitude come straight from the planner's cm/s and cm values.
+
+The same conversion is available from the command line on an exported patch:
+
+```bash
+node tools/mission-to-shots.js js/MapEdits.js --out capture/mission-shots.json
+npm run trailer -- --shots capture/mission-shots.json --no-music --fps 12
+```
+
+The same shots file can drive the pixelated harbor cutscene renderer instead of
+its built-in camera path. This is deterministic — no slow real-time screen
+recording — and writes a 1280×960 MP4 at an exact frame rate:
+
+```bash
+npm run cutscene -- --shots capture/mission-shots.json \
+  --out capture/inav-cutscene.mp4 --fps 24
+npm run cutscene -- --out capture/harbor-cutscene.mp4
+```
+
 A shot looks like this:
 
 ```json
