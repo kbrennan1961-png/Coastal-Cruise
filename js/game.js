@@ -1963,6 +1963,11 @@
     });
     Game.vehicles[Game.activeKey].setVisible(true);
     Audio.setVehicle(Game.vehicles[Game.activeKey].spec);
+    // Cull far static batches before the one splash render. The gameplay loop
+    // widens the radius again once START is pressed.
+    if (CC.StaticBatcher && CC.StaticBatcher.update) {
+      CC.StaticBatcher.update(Game.vehicles[Game.activeKey].pos, 1, 420);
+    }
 
     mark('scene/npcs');
     CC.NPCSystem.init(scene);
@@ -1981,6 +1986,7 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      if (Game.invalidateSplashFrame) Game.invalidateSplashFrame();
     });
   }
 
@@ -3601,9 +3607,28 @@
   /* ---------- main loop ---------- */
   let last = performance.now();
   Game.manualFrame = false;
+  let splashFramePending = false;
+
+  // The town is already built when the splash appears. Running the full
+  // simulation and WebGL render loop behind it makes slow/software GL machines
+  // look hung before START is even clickable, so draw one static follow-camera
+  // frame and leave the splash responsive until the player begins.
+  function renderSplashFrame() {
+    if (!Game.renderer || !Game.vehicles[Game.activeKey]) return;
+    Game.updateCamera(0, Game.vehicles[Game.activeKey], {});
+    Game.renderer.render(Game.scene, Game.camera);
+    splashFramePending = false;
+  }
+  Game.invalidateSplashFrame = function () { splashFramePending = true; };
+
   function frame(now) {
     requestAnimationFrame(frame);
     if (Game.manualFrame) { last = now; return; }
+    if (!Game.started) {
+      last = now;
+      if (splashFramePending) renderSplashFrame();
+      return;
+    }
     tick(now);
   }
   function tick(now) {
@@ -3869,6 +3894,7 @@
       if (startArea) startArea.style.display = '';
       updateSplashFocus();
       stage('ready');
+      splashFramePending = true;
       requestAnimationFrame(frame);
     } catch (err) {
       fail(err);

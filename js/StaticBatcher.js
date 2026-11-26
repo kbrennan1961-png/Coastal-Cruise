@@ -29,8 +29,8 @@
   }
 
   // Walk the module-level state of every system that animates objects and
-  // collect the Object3Ds it keeps references to. Those (and their whole
-  // ancestor/descendant chains) must not be merged away.
+  // collect the Object3Ds it keeps references to. Their subtrees must not be
+  // merged away.
   function collectDynamicRoots() {
     const roots = new Set();
     const seen = new Set();
@@ -128,9 +128,10 @@
     const roots = collectDynamicRoots();
     const dynamic = new Set();
     roots.forEach(function (root) {
+      // Only the referenced object and its own subtree can be animated. A
+      // decorated parent group does not need protection just because one of
+      // its distant children is held by a system.
       root.traverse(function (o) { dynamic.add(o); });
-      let ancestor = root.parent;
-      while (ancestor) { dynamic.add(ancestor); ancestor = ancestor.parent; }
     });
 
     scene.updateMatrixWorld(true);

@@ -10,6 +10,7 @@
  *   Boat float height .... state.floatHeight / centerOffsetY in applyBuoyancy().
  *   Car sinking .......... state.buoyancyFactor (boats > 1, cars < 1).
  *   Choppiness ........... updateRetroWater() uv scroll speeds.
+ *   Pattern .............. makePixelWaterTexture() diamond period/palette.
  */
 (function () {
   'use strict';
@@ -48,39 +49,68 @@
     return seaLevel() + h * WAVE_AMPLITUDE * waveFactor(x, z);
   }
 
-  /* ---------- procedural pixelated texture ---------- */
-  function makePixelWaterTexture(repeat) {
+  /* ---------- procedural pixelated diamond texture ----------
+     The harbour reference uses a chunky cross-hatched diamond shimmer. Build
+     it from two rotated grid distances in 2x2 block space: every diamond is
+     made of hard retro pixels, and the tile always wraps seamlessly. The top
+     sheet is ridge-only with alpha so it can scroll over the solid base. */
+  function makePixelWaterTexture(repeat, opts) {
+    const o = opts || {};
     const size = 64;
+    const period = o.period || 16;
+    const phase = Number(o.phase) || 0;
+    const ridgesOnly = !!o.ridgesOnly;
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
     const img = ctx.createImageData(size, size);
     const d = img.data;
 
-    // Deterministic hash so the same texture is produced on every load.
-    let seed = 0x1a2b3c4d;
-    function rand() {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      return seed / 4294967296;
+    const dark = o.dark || (ridgesOnly ? [12, 74, 98] : [5, 34, 58]);
+    const mid = o.mid || (ridgesOnly ? [58, 151, 163] : [15, 76, 97]);
+    const bright = o.bright || (ridgesOnly ? [182, 232, 218] : [69, 158, 164]);
+
+    function hash(bx, by) {
+      let n = Math.imul(bx + 4096, 374761393) ^ Math.imul(by + 4096, 668265263);
+      n = Math.imul(n ^ (n >>> 13), 1274126177);
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+    }
+    function mix(a, b, t) { return a + (b - a) * t; }
+    function palette(t) {
+      if (t <= 0.55) return [mix(dark[0], mid[0], t / 0.55),
+        mix(dark[1], mid[1], t / 0.55), mix(dark[2], mid[2], t / 0.55)];
+      const k = (t - 0.55) / 0.45;
+      return [mix(mid[0], bright[0], k), mix(mid[1], bright[1], k),
+        mix(mid[2], bright[2], k)];
     }
 
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const i = (y * size + x) * 4;
-        // 2x2 blocks keep the texture chunky (PS1/PS2 nearest-neighbour look).
+        // One value per 2x2 block keeps the nearest-neighbour PS2 look.
         const bx = x >> 1, by = y >> 1;
-        const grain = rand();
-        const block = ((bx * 7 + by * 11) % 13) / 13;
-        const band = Math.sin((bx + by * 0.6) * 0.9 + block * 3.0);
-        let t = 0.34 + block * 0.28 + band * 0.12 + grain * 0.10;
-        // Sparse bright caustic flecks and darker troughs.
-        if (rand() < 0.035) t = 0.86 + grain * 0.14;
-        else if (rand() < 0.05) t = 0.12;
+        const u = (((bx + by + phase) % period) + period) % period;
+        const v = (((bx - by + phase) % period) + period) % period;
+        const fu = u / period, fv = v / period;
+        const edge = Math.max(Math.abs(fu * 2 - 1), Math.abs(fv * 2 - 1));
+        const rim = edge > 0.82;
+        const shoulder = edge > 0.64;
+        const grain = hash(bx, by);
+
+        let t = 0.34 + grain * 0.16 + Math.sin((bx + by) * 0.55) * 0.06;
+        if (rim) t += 0.42;
+        else if (shoulder) t -= 0.12;
+        // One edge of each diamond catches the light; the opposite edge is
+        // darker, which reads as a moving swell when the UVs scroll.
+        if (fu < 0.14 || fv < 0.14) t += 0.12;
+        if (fu > 0.86 || fv > 0.86) t -= 0.10;
         t = Math.max(0, Math.min(1, t));
-        d[i] = Math.round(9 + t * 31);        // deep coastal blue
-        d[i + 1] = Math.round(62 + t * 74);   // teal
-        d[i + 2] = Math.round(78 + t * 74);
-        d[i + 3] = 255;
+
+        const rgb = palette(t);
+        d[i] = Math.round(rgb[0]);
+        d[i + 1] = Math.round(rgb[1]);
+        d[i + 2] = Math.round(rgb[2]);
+        d[i + 3] = ridgesOnly ? (rim ? 220 : shoulder ? 82 : 0) : 255;
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -90,7 +120,9 @@
     tex.minFilter = THREE.NearestFilter;
     tex.generateMipmaps = false;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeat || 32, repeat || 32);
+    const rx = Array.isArray(repeat) ? repeat[0] : (repeat || 32);
+    const ry = Array.isArray(repeat) ? repeat[1] : rx;
+    tex.repeat.set(rx, ry);
     if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
   }
@@ -225,17 +257,20 @@
     // the per-frame vertex work by nearly half versus 64.
     const segments = size && size.segments ? size.segments : 48;
     const masks = makeWaterMasks();
-    const texA = makePixelWaterTexture(32);
-    const texB = makePixelWaterTexture(48);
+    const texA = makePixelWaterTexture(32, { period: 16, phase: 0 });
+    const texB = makePixelWaterTexture(48, {
+      period: 8, phase: 3, ridgesOnly: true
+    });
     const plane = makeWaterGeometry(width, height, cx, cz, segments);
     const planes = [plane];
 
     const base = makeLayer(plane, cx, cz, seaLevel(), texA,
-      masks ? masks.calm : null, 1, { x: 0.011, y: 0.006 }, 1);
-    // A second, semi-transparent sheet scrolling at a different angle produces
-    // the classic overlapping PS2 wave interference without extra shader work.
+      masks ? masks.calm : null, 1, { x: 0.016, y: 0.010 }, 1);
+    // A second, semi-transparent sheet with ridge-only diamonds scrolling at a
+    // different angle produces the shimmering cross-hatch from the harbour
+    // reference without extra shader work.
     const top = makeLayer(plane, cx, cz, seaLevel() + 0.12, texB,
-      masks ? masks.calm : null, 0.42, { x: -0.019, y: 0.014 }, 2);
+      masks ? masks.calm : null, 0.42, { x: -0.024, y: 0.018 }, 2);
     texB.offset.set(0.37, 0.21);
 
     const allLayers = [base, top];
@@ -253,7 +288,8 @@
       fp.needsUpdate = true;
       planes.push(flat);
       riverLayer = makeLayer(flat, cx, cz, seaLevel() + 0.03,
-        makePixelWaterTexture(24), masks.river, 1, { x: 0, y: 0 }, 1.5, false);
+        makePixelWaterTexture(24, { period: 16, phase: 8 }),
+        masks.river, 1, { x: 0, y: 0 }, 1.5, false);
       allLayers.push(riverLayer);
       scene.add(riverLayer.mesh);
     }

@@ -18,6 +18,7 @@
     "buildings": null,
     "landmarks": null,
     "challenges": null,
-    "assets": []
+    "assets": [],
+    "trailerShots": []
   };
 })();

@@ -46,6 +46,7 @@
   };
 
   var originalRead = null;
+  var patchedRead = null;
   var capture = {
     recorder: null, chunks: [], chain: Promise.resolve(), mime: '', inline: [],
     track: null, originalRender: null, renderPatched: false,
@@ -174,10 +175,10 @@
   }
 
   function prepare() {
-    if (!originalRead) {
-      originalRead = G.readInput;
-      G.readInput = function (pad, v) { return inputFor(v); };
-    }
+    if (!originalRead) originalRead = G.readInput;
+    if (!patchedRead) patchedRead = function (pad, v) { return inputFor(v); };
+    // A previous shot restores the original reader, so re-arm it every time.
+    if (G.readInput !== patchedRead) G.readInput = patchedRead;
     T.active = true;
     G.keys = {};
     G.mapOpen = false;
@@ -222,8 +223,185 @@
     snapCamera();
   }
 
+  function numberOr(value, fallback) {
+    var n = Number(value);
+    return value === undefined || value === null || !isFinite(n) ? fallback : n;
+  }
+
+  function pointXZ(value) {
+    if (Array.isArray(value)) return { x: Number(value[0]), z: Number(value[1]) };
+    if (value && typeof value === 'object') return { x: Number(value.x), z: Number(value.z) };
+    return null;
+  }
+
+  function validPoint(value) {
+    var p = pointXZ(value);
+    return p && isFinite(p.x) && isFinite(p.z) ? p : null;
+  }
+
+  function shotPoint(shot, key, name) {
+    var p = validPoint(shot[key]);
+    if (!p) throw new Error('Shot "' + name + '" has an invalid ' + key + ' point');
+    return p;
+  }
+
+  function headingBetween(a, b) {
+    var dx = b.x - a.x;
+    var dz = b.z - a.z;
+    return Math.hypot(dx, dz) > 0.001 ? Math.atan2(dx, dz) : 0;
+  }
+
+  function poseFrom(value, computedHeading) {
+    var raw = Array.isArray(value) ? { x: value[0], z: value[1] } : (value || {});
+    var alt = raw.alt !== undefined && raw.alt !== null ? raw.alt : raw.altitude;
+    var pose = {
+      x: numberOr(raw.x, 0),
+      z: numberOr(raw.z, 0),
+      h: numberOr(raw.h, computedHeading || 0),
+      s: numberOr(raw.s, 0)
+    };
+    if (alt !== undefined && alt !== null && isFinite(Number(alt))) {
+      pose.alt = pose.altitude = Number(alt);
+    }
+    return pose;
+  }
+
+  function isFlying(key) {
+    var v = G.vehicles && G.vehicles[key];
+    return !!(v && (v.isAircraft || (v.spec && v.spec.flying)));
+  }
+
+  function roadPath(shot, start, finish, name) {
+    if (typeof CC.computeRoute !== 'function') {
+      throw new Error('CC.computeRoute is unavailable; cannot render road shot "' + name + '"');
+    }
+    var route;
+    try {
+      route = CC.computeRoute({ x: start.x, z: start.z }, { x: finish.x, z: finish.z });
+    } catch (err) {
+      throw new Error('Road routing failed for shot "' + name + '": ' + (err && err.message ? err.message : err));
+    }
+    var raw = route && Array.isArray(route.points)
+      ? route.points.map(pointXZ).filter(function (p) { return p && isFinite(p.x) && isFinite(p.z); })
+      : [];
+    // computeRoute falls back to a bare start/finish line when no street path
+    // exists. Never turn that fallback into a drivable waypoint list.
+    if (raw.length < 3) {
+      throw new Error('No road route found for shot "' + name +
+        '" (computeRoute returned no street path; refusing a direct start-to-finish line)');
+    }
+    var heading = 0;
+    for (var h = 1; h < raw.length; h++) {
+      if (Math.hypot(raw[h].x - raw[0].x, raw[h].z - raw[0].z) > 0.01) {
+        heading = headingBetween(raw[0], raw[h]);
+        break;
+      }
+    }
+    var waypoints = [];
+    var spacing = 8;
+    var radius = 5;
+    for (var i = 1; i < raw.length; i++) {
+      var a = raw[i - 1];
+      var b = raw[i];
+      var dx = b.x - a.x;
+      var dz = b.z - a.z;
+      var len = Math.hypot(dx, dz);
+      if (len < 0.01) continue;
+      var steps = Math.max(1, Math.ceil(len / spacing));
+      for (var j = 1; j <= steps; j++) {
+        var t = j / steps;
+        var wp = { x: a.x + dx * t, z: a.z + dz * t, radius: radius };
+        if (Math.hypot(wp.x - start.x, wp.z - start.z) < 2) continue;
+        var last = waypoints[waypoints.length - 1];
+        if (last && Math.hypot(last.x - wp.x, last.z - wp.z) < 1) continue;
+        waypoints.push(wp);
+      }
+    }
+    if (!waypoints.length) {
+      throw new Error('No usable road waypoints for shot "' + name + '"');
+    }
+    var tail = waypoints[waypoints.length - 1];
+    if (Math.hypot(tail.x - finish.x, tail.z - finish.z) > 1) {
+      waypoints.push({ x: finish.x, z: finish.z, radius: radius });
+    } else {
+      tail.x = finish.x;
+      tail.z = finish.z;
+    }
+    return { waypoints: waypoints, heading: heading };
+  }
+
+  async function runShot(shot, options) {
+    shot = shot || {};
+    options = options || {};
+    var name = shot.name || 'shot';
+    var mode = shot.mode;
+    if (mode !== 'road' && mode !== 'straight') {
+      throw new Error('Shot "' + name + '" has invalid mode "' + mode + '" (expected road or straight)');
+    }
+    var vehicle = shot.vehicle;
+    if (!vehicle || !G.vehicles || !G.vehicles[vehicle]) {
+      throw new Error('Shot "' + name + '" has unknown vehicle "' + vehicle + '"');
+    }
+    var startRaw = shot.start;
+    var finishRaw = shot.finish;
+    var start = shotPoint(shot, 'start', name);
+    var finish = shotPoint(shot, 'finish', name);
+    var durationSec = numberOr(shot.durationSec, NaN);
+    if (!isFinite(durationSec) || durationSec < 0) {
+      throw new Error('Shot "' + name + '" has invalid durationSec');
+    }
+    var units = numberOr(options.units, 1);
+    if (units <= 0) units = 1;
+
+    prepare();
+    try {
+      if (mode === 'road') {
+        var road = roadPath(shot, start, finish, name);
+        setGround(vehicle, poseFrom(startRaw, road.heading), road.waypoints,
+          numberOr(shot.speed, 28), numberOr(shot.camera, 0), !!shot.boost);
+      } else {
+        var straightHeading = headingBetween(start, finish);
+        var pose = poseFrom(startRaw, straightHeading);
+        var camMode = numberOr(shot.camera, isFlying(vehicle) ? 2 : 0);
+        if (isFlying(vehicle)) {
+          var rawAlt = finishRaw && (finishRaw.alt !== undefined ? finishRaw.alt : finishRaw.altitude);
+          var target = {
+            x: finish.x,
+            z: finish.z,
+            alt: numberOr(rawAlt, 35),
+            radius: numberOr(finishRaw && finishRaw.radius, 12)
+          };
+          setAir(vehicle, pose, [target], camMode);
+        } else {
+          setGround(vehicle, pose, [{ x: finish.x, z: finish.z, radius: 8 }],
+            numberOr(shot.speed, 28), camMode, !!shot.boost);
+        }
+      }
+      var durationMs = durationSec * 1000 * units;
+      if (durationMs > 0) await wait(durationMs);
+      return {
+        ok: true, name: name, vehicle: vehicle, mode: mode, durationMs: durationMs
+      };
+    } finally {
+      T.active = false;
+      T.mode = 'manual';
+      T.manual = makeInput();
+      if (originalRead && G.readInput === patchedRead) G.readInput = originalRead;
+    }
+  }
+
   async function run(options) {
     options = options || {};
+    if (options.shots) {
+      var list = Array.isArray(options.shots) ? options.shots
+        : (Array.isArray(options.shots.shots) ? options.shots.shots : null);
+      if (!list) throw new Error('options.shots must be an array or {shots: []}');
+      var results = [];
+      for (var s = 0; s < list.length; s++) {
+        results.push(await runShot(list[s], options));
+      }
+      return results;
+    }
     var units = options.units === undefined ? 1 : options.units;
     prepare();
 
@@ -377,6 +555,7 @@
 
   window.CCTrailer = {
     run: run,
+    runShot: runShot,
     startCapture: startCapture,
     stopCapture: stopCapture,
     setInput: function (patch) { T.manual = makeInput(patch); T.mode = 'manual'; },

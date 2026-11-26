@@ -16,7 +16,9 @@
       <button class="tool" data-tool="building" title="Drag to place a building (R)">▭ <span>Building</span></button>
       <button class="tool" data-tool="bridge" title="Drag to place a bridge + road (G)">≋ <span>Bridge</span></button>
       <button class="tool" data-tool="tree" title="Place a tree (T)">♣ <span>Tree</span></button>
+      <button class="tool" data-tool="paint" title="Paint brush: drag to stamp trees or models (W)">🖌 <span>Paint</span></button>
       <button class="tool" data-tool="model" title="Place a baked Blender/baked model (M)">◈ <span>Model</span></button>
+      <button class="tool" data-tool="trailer" title="Script a trailer shot: click start, then finish (K)">▶ <span>Trailer</span></button>
       <button class="tool" data-tool="assetErase" title="Erase an asset (X)">✕ <span>Erase asset</span></button>
       <button class="tool" data-tool="pan" title="Pan the map (H)">✥ <span>Pan</span></button>
     </div>
@@ -29,15 +31,26 @@
       <button id="zoomFitBtn" title="Fit whole map (0)">⤢</button>
     </div>
     <div class="toolgroup" id="viewTools">
-      <button id="view2DBtn" class="toggle on" title="2D layout view">▦ <span>2D</span></button>
+      <button id="view2DBtn" class="toggle on" title="Toggle 2D editor / 3D preview">▦ <span>2D / 3D</span></button>
       <button id="preview3DBtn" class="toggle" title="3D preview (P)">◱ <span>3D preview</span></button>
       <button id="previewFitBtn" title="Fit 3D view" hidden>⤢ <span>Fit 3D</span></button>
+      <div id="renderTools" class="toolgroup" hidden>
+        <button class="style active" data-style="game" title="Game-style preview materials">◈ <span>Game</span></button>
+        <button class="style" data-style="realistic" title="Blender / Unreal-like preview lighting and materials">✦ <span>Realistic</span></button>
+      </div>
+      <div id="transformTools" class="toolgroup" hidden>
+        <button class="transform active" data-transform="view" title="3D camera only (1)">✥ <span>View</span></button>
+        <button class="transform" data-transform="move" title="Move selected object in 3D (2)">✣ <span>Move</span></button>
+        <button class="transform" data-transform="rotate" title="Rotate selected object in 3D (3)">⟳ <span>Rotate</span></button>
+        <button class="transform" data-transform="scale" title="Scale selected object in 3D (4)">⤡ <span>Scale</span></button>
+      </div>
     </div>
     <div class="toolgroup right">
+      <button id="blenderSendBtn" title="Open Blender round-trip commands">🧊 <span>Blender</span></button>
       <button id="newGameBtn" title="Start a standalone game in a new folder">🏗 <span>New game</span></button>
       <button id="newMapBtn" title="Start a blank map project">✚ <span>New map</span></button>
       <button id="importBtn" title="Import OSM, GeoJSON or JSON map data">⤓ <span>Import data</span></button>
-      <button id="resetBtn" title="Discard edits and reload the baked map">↺ <span>Reset</span></button>
+      <button id="resetBtn" title="Discard edits and reload the current game map">↺ <span>Reset</span></button>
       <button id="loadBtn" title="Load an existing MapEdits.js patch">📂 <span>Load patch</span></button>
       <button id="copyBtn" title="Copy generated patch JS to clipboard">⧉ <span>Copy JS</span></button>
       <button id="applyBtn" class="primary" title="Export the patch the game will load">✔ <span>Apply to game</span></button>
@@ -99,6 +112,30 @@
         <label>Tree scale <input id="treeScale" type="range" min="0.6" max="2.2" step="0.1" value="1" /><output id="treeScaleOut">1.0</output></label>
         <label>Model <select id="modelKey"></select></label>
         <label>Model scale <input id="modelScale" type="range" min="0.25" max="4" step="0.05" value="1" /><output id="modelScaleOut">1.00</output></label>
+        <hr />
+        <label>Paint brush
+          <select id="paintKind">
+            <option value="tree">Trees</option>
+            <option value="model">Baked model</option>
+          </select>
+        </label>
+        <label id="paintModelRow" hidden>Brush model <select id="paintModel"></select></label>
+        <label>Brush size <input id="paintSize" type="range" min="2" max="80" step="1" value="14" /><output id="paintSizeOut">14</output></label>
+        <label>Stamp spacing <input id="paintSpacing" type="range" min="2" max="80" step="1" value="10" /><output id="paintSpacingOut">10</output></label>
+        <label>Scatter <input id="paintJitter" type="range" min="0" max="100" step="5" value="35" /><output id="paintJitterOut">35%</output></label>
+        <label>Brush scale <input id="paintScale" type="range" min="0.25" max="4" step="0.05" value="1" /><output id="paintScaleOut">1.00</output></label>
+        <label class="check"><input id="paintRandomRot" type="checkbox" checked /> Random rotation</label>
+        <label class="check"><input id="paintVaryScale" type="checkbox" checked /> Vary scale</label>
+      </section>
+
+      <section>
+        <h2>TRAILER SHOTS</h2>
+        <div id="shotList" class="shotList"><div class="empty">No trailer shots yet.</div></div>
+        <div class="row">
+          <button id="addShotBtn" class="small">New shot</button>
+          <button id="exportShotsBtn" class="small">Export JSON</button>
+        </div>
+        <button id="renderShotsBtn" class="small wide">Show render command</button>
       </section>
 
       <section>
@@ -112,10 +149,13 @@
 
       <section class="help">
         <h2>HOW TO APPLY</h2>
+        <p>The editor loads the same baked game map: the 2D backdrop is the exact ground canvas used in-game, and roads, buildings, landmarks and coast rules come from the same runtime map data. <b>Reset</b> discards the current edit patch and reloads that game map.</p>
         <p><b>Apply to game</b> downloads <code>MapEdits.js</code>. Save it over <code>js/MapEdits.js</code>, then hard-refresh <code>index.html</code>. The editor can also write the file directly if your browser supports it. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
-        <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck.</p>
-        <p><b>3D preview</b> (<b>P</b>) renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. It is a view only — switch back to 2D to edit.</p>
-        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models and elevation. Blender can export that JSON with <code>tools/blender_map_export.py</code>, and import it back as 3D proxies or real baked meshes with <code>tools/blender_map_import.py</code>.</p>
+        <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck. <b>Paint</b> (<b>W</b>) works like a Photoshop brush: drag to stamp trees or baked models; the Brush panel controls size, spacing, scatter and scale.</p>
+        <p><b>2D / 3D</b> (or <b>P</b>) toggles the editor view. The 3D preview renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. Use <b>Game / Realistic</b> to switch between the in-game PS2 look and softer Blender/Unreal-style lighting, shadows and building facades. Use <b>View / Move / Rotate / Scale</b> (keys <b>1–4</b>) for Blender-like gizmo editing of the selected building, landmark or model. For exact Blender geometry, place a baked <b>Model</b> asset; plain <b>Building</b> entries are detailed facades generated from their map dimensions.</p>
+        <p><b>Trailer</b> (<b>K</b>): click a start point, then a finish point. Ground vehicles are routed along roads when rendered; aircraft and jetpacks fly straight to the finish. Export the shot JSON and render one clip per shot with <code>npm run trailer -- --shots trailer-shots.json</code>.</p>
+        <p><b>Blender</b> opens the round-trip helper. The <code>to-blender</code> and <code>to-editor</code> commands carry roads, assets, baked meshes, landmarks, challenges, trailer shots and elevation between Blender 3.6 and this editor.</p>
+        <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models, elevation and trailer shots.</p>
       </section>
     </aside>
   </main>
@@ -171,6 +211,82 @@
         <button id="newMapImportBtn">Import data…</button>
         <button id="newMapCancelBtn">Cancel</button>
         <button id="newMapCreateBtn" class="primary">Create map</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="shotDialog" class="modal" hidden>
+    <div class="modalCard wideCard">
+      <h2>TRAILER SHOT</h2>
+      <p>Ground shots use a road route at render time. Air shots fly straight to the finish waypoint.</p>
+      <div class="row">
+        <label>Name <input id="shotName" type="text" /></label>
+        <label>Vehicle
+          <select id="shotVehicle">
+            <option value="coupe">Coupe</option>
+            <option value="bus">Bus</option>
+            <option value="pedestrian">Pedestrian</option>
+            <option value="boat">Boat</option>
+            <option value="jetpack">Jetpack</option>
+            <option value="helicopter">Helicopter</option>
+            <option value="plane">Plane</option>
+            <option value="fpv">FPV drone</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Mode
+          <select id="shotMode">
+            <option value="road">Follow roads</option>
+            <option value="straight">Straight flight / direct</option>
+          </select>
+        </label>
+        <label>Camera <input id="shotCamera" type="number" min="0" max="9" step="1" value="0" /></label>
+      </div>
+      <div class="row">
+        <label>Start X <input id="shotStartX" type="number" step="1" /></label>
+        <label>Start Z <input id="shotStartZ" type="number" step="1" /></label>
+        <label>Start alt <input id="shotStartAlt" type="number" step="1" value="0" /></label>
+      </div>
+      <div class="row">
+        <label>Start heading <input id="shotStartH" type="number" step="0.05" value="0" /></label>
+        <label>Start speed <input id="shotStartS" type="number" step="1" value="0" /></label>
+        <label>Speed cap <input id="shotSpeed" type="number" step="1" value="28" /></label>
+      </div>
+      <div class="row">
+        <label>Finish X <input id="shotFinishX" type="number" step="1" /></label>
+        <label>Finish Z <input id="shotFinishZ" type="number" step="1" /></label>
+        <label>Finish alt <input id="shotFinishAlt" type="number" step="1" value="35" /></label>
+      </div>
+      <div class="row">
+        <label>Duration (sec) <input id="shotDuration" type="number" step="0.5" min="1" value="6" /></label>
+        <label>Boost <select id="shotBoost"><option value="false">Off</option><option value="true">On</option></select></label>
+      </div>
+      <label>Audio file (optional) <input id="shotAudio" type="text" placeholder="media/base_211.m4a" /></label>
+      <label>Note <input id="shotNote" type="text" placeholder="Shot description for Filmcraft" /></label>
+      <div class="modalButtons">
+        <button id="shotDeleteBtn" class="danger">Delete</button>
+        <button id="shotCancelBtn">Cancel</button>
+        <button id="shotSaveBtn" class="primary">Save shot</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="blenderDialog" class="modal" hidden>
+    <div class="modalCard wideCard">
+      <h2>BLENDER 3.6 ROUND TRIP</h2>
+      <p>Blender cannot be launched from a <code>file://</code> page. Download the current patch, run one helper command, then import the result back here.</p>
+      <label>Editor → Blender
+        <code id="blenderToCode">node tools/blender-map-bridge.js to-blender js/MapEdits.js map.blend</code>
+      </label>
+      <label>Blender → editor
+        <code id="blenderFromCode">node tools/blender-map-bridge.js to-editor map.blend patch.json</code>
+      </label>
+      <p>Roads, assets, baked meshes, landmarks, challenges, trailer shots and elevation are preserved. Override the Blender path with <code>BLENDER=/path/to/blender</code>.</p>
+      <div class="modalButtons">
+        <button id="blenderPatchBtn">Download patch JSON</button>
+        <button id="blenderImportBtn">Import Blender JSON</button>
+        <button id="blenderCloseBtn" class="primary">Done</button>
       </div>
     </div>
   </div>

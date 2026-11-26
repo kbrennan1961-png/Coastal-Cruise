@@ -7,7 +7,8 @@ Run with Blender 3.6+:
 
 Object conventions (set as custom properties, prefix names also work):
 
-  cc_type = road | building | bridge | tree | model | elevation
+  cc_type = road | building | bridge | tree | model | elevation |
+            landmark | challenge
   cc_type = road      Curve or mesh polyline. cc_road_type, cc_width,
                       cc_closed, cc_force_bridge.
   cc_type = building  Mesh/empty; bounding box becomes w/l/h. cc_color.
@@ -16,6 +17,13 @@ Object conventions (set as custom properties, prefix names also work):
   cc_type = model     Point object; cc_model_key names a baked asset,
                       cc_scale, cc_y, cc_rot, cc_color.
   cc_type = elevation Point object; cc_h and cc_r.
+  cc_type = landmark  Empty; cc_data holds the full JSON object (cc_id and
+                      cc_name are a fallback when cc_data is absent).
+  cc_type = challenge Empty; same convention as landmark.
+
+Scene custom properties: cc_trailer_shots holds JSON text for patch
+trailerShots, and cc_patch_meta holds JSON text for other patch metadata
+(world, mapWidth, mapHeight, newMap, gameName, standaloneGame, etc.).
 
 Coordinate mapping matches the game's glTF convention:
 
@@ -42,11 +50,31 @@ PREFIXES = (
     ('tree_', 'tree'),
     ('model_', 'model'),
     ('elev_', 'elevation'),
+    ('landmark_', 'landmark'),
+    ('challenge_', 'challenge'),
 )
+
+DATA_KEYS = {'roads', 'buildings', 'assets', 'elevation', 'landmarks',
+             'challenges', 'trailerShots'}
 
 
 def prop(obj, name, default=None):
     return obj.get(name, default)
+
+
+def json_value(value, default):
+    """Parse JSON text from a custom property, falling back on bad data."""
+    if value is None:
+        return default
+    try:
+        return json.loads(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def json_object(value, default=None):
+    parsed = json_value(value, default)
+    return parsed if isinstance(parsed, dict) else default
 
 
 def kind_of(obj):
@@ -251,18 +279,46 @@ def point_asset(obj, kind):
     return asset
 
 
+def info_asset(obj):
+    """Restore a landmark/challenge from cc_data, or basic custom props."""
+    data = json_object(prop(obj, 'cc_data'), None)
+    if data is not None:
+        return dict(data)
+    loc = obj.matrix_world.translation
+    asset = {
+        'id': prop(obj, 'cc_id', 'blend_' + obj.name),
+        'name': prop(obj, 'cc_name', obj.name),
+        'x': loc.x,
+        'z': -loc.y,
+    }
+    if prop(obj, 'cc_description') is not None:
+        asset['description'] = prop(obj, 'cc_description')
+    if prop(obj, 'cc_hidden', False):
+        asset['hidden'] = True
+    return asset
+
+
 def main():
+    scene = bpy.context.scene
     data = {
         'version': 1,
         'generated': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
-        'mapName': prop(bpy.context.scene, 'cc_map_name', bpy.context.scene.name),
+        'mapName': prop(scene, 'cc_map_name', scene.name),
         'roads': [],
         'landmarks': [],
         'challenges': [],
         'assets': [],
         'elevation': {'hills': [], 'points': [], 'grid': None},
     }
-    for obj in bpy.context.scene.objects:
+    trailer_text = prop(scene, 'cc_trailer_shots')
+    if trailer_text is not None:
+        data['trailerShots'] = json_value(trailer_text, [])
+    for key, value in json_object(prop(scene, 'cc_patch_meta'), {}).items():
+        if key not in DATA_KEYS:
+            data[key] = value
+
+    info_items = {'landmark': [], 'challenge': []}
+    for obj in scene.objects:
         kind = kind_of(obj)
         if not kind:
             continue
@@ -274,12 +330,24 @@ def main():
             data['assets'].append(point_asset(obj, kind))
         elif kind == 'elevation':
             data['elevation']['points'].append(point_asset(obj, 'elevation'))
+        elif kind in ('landmark', 'challenge'):
+            try:
+                order = int(prop(obj, 'cc_index', 0))
+            except (TypeError, ValueError):
+                order = 0
+            info_items[kind].append((order, obj.name, obj))
+    for kind, items in info_items.items():
+        for _, _, obj in sorted(items, key=lambda item: (item[0], item[1])):
+            data[kind + 's'].append(info_asset(obj))
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     with open(out_path, 'w') as fh:
         json.dump(data, fh, indent=2)
-    print('Wrote {} roads, {} assets, {} elevation points to {}'.format(
-        len(data['roads']), len(data['assets']),
-        len(data['elevation']['points']), out_path))
+    print('Wrote {} roads, {} assets, {} landmarks, {} challenges, '
+          '{} elevation points, {} trailer shots to {}'.format(
+              len(data['roads']), len(data['assets']),
+              len(data['landmarks']), len(data['challenges']),
+              len(data['elevation']['points']),
+              len(data.get('trailerShots') or []), out_path))
 
 
 main()

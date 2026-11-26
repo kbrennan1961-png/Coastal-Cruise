@@ -17,8 +17,10 @@
     building: 'Building: drag to size a rectangle, or click for the default size.',
     bridge: 'Bridge: drag across the water; adds a road plus a bridge deck.',
     tree: 'Tree: click to place one at the current brush scale.',
+    paint: 'Paint brush: drag to stamp trees or baked models. Adjust size, spacing, scatter and scale in the Brush panel.',
     assetErase: 'Erase asset: click a building, landmark or custom asset to remove it.',
     model: 'Model: click to place a baked Blender/baked model from the brush list.',
+    trailer: 'Trailer: click a start point, then a finish point to script a road-following or straight-flight shot.',
     pan: 'Pan: drag the map. Middle mouse or Space+drag also pans.'
   };
 
@@ -74,13 +76,71 @@
     return { w: fp.w * scale, l: fp.l * scale, h: fp.h * scale };
   }
 
+  let paintSerial = 0;
+  function brushSettings() {
+    const num = function (id, fallback) {
+      const el = $(id);
+      const v = el ? Number(el.value) : NaN;
+      return Number.isFinite(v) ? v : fallback;
+    };
+    const checked = function (id) {
+      const el = $(id);
+      return !!(el && el.checked);
+    };
+    return {
+      kind: ($('paintKind') && $('paintKind').value) || 'tree',
+      model: ($('paintModel') && $('paintModel').value) || MODEL_KEYS[0],
+      size: Math.max(2, num('paintSize', 14)),
+      spacing: Math.max(2, num('paintSpacing', 10)),
+      scatter: Math.max(0, Math.min(1, num('paintJitter', 35) / 100)),
+      scale: Math.max(0.05, num('paintScale', 1)),
+      randomRot: checked('paintRandomRot'),
+      varyScale: checked('paintVaryScale')
+    };
+  }
+
+  // Deterministic scatter keeps a painted stroke reproducible after export.
+  function brushNoise(seed, salt) {
+    const n = Math.sin((seed + 1) * 127.1 + salt * 311.7) * 43758.5453;
+    return n - Math.floor(n);
+  }
+
+  function stampBrushAt(x, z, stampIndex) {
+    const b = brushSettings();
+    const radius = b.size * b.scatter;
+    const angle = brushNoise(stampIndex, 1) * Math.PI * 2;
+    const offset = radius ? Math.sqrt(brushNoise(stampIndex, 2)) * radius : 0;
+    const px = x + Math.cos(angle) * offset;
+    const pz = z + Math.sin(angle) * offset;
+    const scale = b.scale * (b.varyScale ? 0.82 + brushNoise(stampIndex, 3) * 0.36 : 1);
+    const asset = {
+      id: 'paint_' + Date.now().toString(36) + '_' + (paintSerial++),
+      x: px, z: pz, y: 0, scale: scale,
+      rot: b.randomRot ? brushNoise(stampIndex, 4) * Math.PI * 2 : 0,
+      description: ''
+    };
+    if (b.kind === 'model' && MODEL_RECORDS[b.model]) {
+      asset.type = 'model';
+      asset.model = b.model;
+      asset.name = 'Painted ' + modelLabel(b.model);
+      const fp = modelFootprint(asset);
+      if (fp) { asset.w = fp.w; asset.l = fp.l; asset.h = fp.h; }
+    } else {
+      asset.type = 'tree';
+      asset.name = 'Painted tree';
+    }
+    state.assets.push(asset);
+    return asset;
+  }
+
   const state = {
     world: Object.assign({}, DEFAULT_WORLD),
     newMap: false,
     standaloneGame: false,
     gameName: '',
     mapName: 'Coastal Cruise',
-    roads: [], buildings: [], landmarks: [], challenges: [], assets: [],
+    roads: [], buildings: [], landmarks: [], challenges: [], assets: [], trailerShots: [],
+    trailerDraft: null, shotEditIndex: -1, transformMode: 'view', transformBase: null,
     elevation: { hills: [], points: [], grid: null },
     view: { scale: 1, tx: 0, ty: 0 },
     tool: 'select',
@@ -106,10 +166,28 @@
     return CC.mapEdits && CC.mapEdits.active ? CC.mapEdits : null;
   }
 
-  function initData() {
+  function gameMapData() {
     const baked = CC.bakedMap || {};
+    const IM = CC.ImageMap;
+    const active = IM && IM.ready ? IM : null;
+    return {
+      roads: active && active.roads && active.roads.length ? active.roads : (baked.roads || []),
+      buildings: active && active.buildings ? active.buildings : (baked.buildings || []),
+      landmarks: active && active.landmarks ? active.landmarks : (baked.landmarks || []),
+      challenges: active && active.challenges ? active.challenges : (baked.challenges || [])
+    };
+  }
+
+  function gameBaseRoads() {
+    const IM = CC.ImageMap;
+    if (IM && IM.ready && IM.roads && IM.roads.length) return clone(IM.roads);
+    const bakedRoads = (CC.bakedMap && CC.bakedMap.roads) || [];
+    return CC.simplifyRoads ? CC.simplifyRoads(clone(bakedRoads)) : clone(bakedRoads);
+  }
+
+  function initData() {
     const patch = currentPatch();
-    const bakedRoads = baked.roads || [];
+    const baked = gameMapData();
     state.world = patch && patch.world ? clone(patch.world) : clone(DEFAULT_WORLD);
     state.newMap = !!(patch && patch.newMap);
     state.standaloneGame = !!(patch && patch.standaloneGame);
@@ -117,19 +195,30 @@
     state.mapName = patch && patch.mapName ? patch.mapName : 'Coastal Cruise';
     state.roads = clone(patch && Array.isArray(patch.roads)
       ? patch.roads
-      : (CC.simplifyRoads ? CC.simplifyRoads(clone(bakedRoads)) : bakedRoads));
-    state.buildings = clone(patch && Array.isArray(patch.buildings) ? patch.buildings : (baked.buildings || []));
-    state.landmarks = clone(patch && Array.isArray(patch.landmarks) ? patch.landmarks : (baked.landmarks || []));
-    state.challenges = clone(patch && Array.isArray(patch.challenges) ? patch.challenges : (baked.challenges || []));
+      : gameBaseRoads());
+    state.buildings = clone(patch && Array.isArray(patch.buildings) ? patch.buildings : baked.buildings);
+    state.landmarks = clone(patch && Array.isArray(patch.landmarks) ? patch.landmarks : baked.landmarks);
+    state.challenges = clone(patch && Array.isArray(patch.challenges) ? patch.challenges : baked.challenges);
+    state.trailerShots = clone(patch && Array.isArray(patch.trailerShots) ? patch.trailerShots : []);
     state.assets = clone(patch && patch.assets ? patch.assets : []);
     state.elevation = clone(patch && patch.elevation
       ? patch.elevation : { hills: [], points: [], grid: null });
     updateApplyButton();
   }
 
-  /* ---------- terrain preview ---------- */
+  /* ---------- terrain preview ----------
+     The game paints its playable ground into ImageMap.groundCanvas. Use that
+     exact canvas as the editor backdrop so the 2D map, full-screen planner and
+     3D preview all show the same shoreline, river, zones and road corridor. */
   let terrainCanvas = null;
   function buildTerrain() {
+    state.terrainCanvas = null;
+    const IM = CC.ImageMap;
+    if (IM && IM.groundCanvas && !state.newMap) {
+      terrainCanvas = IM.groundCanvas;
+      state.terrainCanvas = terrainCanvas;
+      return;
+    }
     const cell = 3;
     const w = Math.ceil((bounds().maxX - bounds().minX) / cell);
     const h = Math.ceil((bounds().maxZ - bounds().minZ) / cell);
@@ -159,6 +248,7 @@
       }
     }
     tctx.putImageData(img, 0, 0);
+    state.terrainCanvas = terrainCanvas;
   }
 
   /* ---------- coordinate helpers ---------- */
@@ -393,6 +483,47 @@
     });
   }
 
+  function drawTrailerShots() {
+    const pending = state.trailerDraft;
+    const entries = state.trailerShots.map(function (s, i) { return { shot: s, index: i, pending: false }; });
+    if (pending) entries.push({ shot: pending, index: -1, pending: true });
+    if (!entries.length) return;
+    ctx.save();
+    ctx.font = '10px Arial';
+    entries.forEach(function (entry) {
+      const shot = entry.shot || {};
+      const start = shot.start || {};
+      const finish = shot.finish || {};
+      if (!isFinite(Number(start.x)) || !isFinite(Number(start.z))) return;
+      const a = worldToScreen(Number(start.x), Number(start.z));
+      const mode = shot.mode || (isAirVehicle(shot.vehicle) ? 'straight' : 'road');
+      const color = mode === 'straight' ? '#f2b35c' : '#35c6d8';
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = entry.pending ? 1.5 : 2;
+      ctx.setLineDash(entry.pending ? [5, 4] : [9, 5]);
+      if (isFinite(Number(finish.x)) && isFinite(Number(finish.z))) {
+        const b = worldToScreen(Number(finish.x), Number(finish.z));
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillRect(b.x - 4, b.y - 4, 8, 8);
+      } else {
+        const b = worldToScreen(state.mouse.wx, state.mouse.wz);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, Math.PI * 2); ctx.fill();
+      const label = entry.pending ? 'PICK FINISH' : ((entry.index + 1) + ' · ' + (shot.name || shot.vehicle || 'shot'));
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(label, a.x + 8, a.y - 6);
+    });
+    ctx.restore();
+  }
+
+  function isAirVehicle(vehicle) {
+    return vehicle === 'jetpack' || vehicle === 'plane' || vehicle === 'helicopter' || vehicle === 'fpv';
+  }
+
   function drawDraft() {
     if (!state.draft || state.draft.length === 0) return;
     const pts = state.draft.concat([[state.mouse.wx, state.mouse.wz]]);
@@ -472,6 +603,19 @@
     if (!state.mouse.inside) return;
     const s = worldToScreen(state.mouse.wx, state.mouse.wz);
     ctx.save();
+    if (state.tool === 'paint') {
+      const b = brushSettings();
+      const r = Math.max(4, b.size * state.view.scale);
+      ctx.strokeStyle = 'rgba(53,198,216,0.95)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(53,198,216,0.95)';
+      ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+    }
     ctx.strokeStyle = 'rgba(255,255,255,0.85)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -498,6 +642,7 @@
     drawAssets();
     drawShapePreview();
     drawDraft();
+    drawTrailerShots();
     drawSelection();
     drawCursor();
     updateCounts();
@@ -581,7 +726,8 @@
       mapName: state.mapName,
       roads: clone(state.roads), buildings: clone(state.buildings),
       landmarks: clone(state.landmarks), challenges: clone(state.challenges),
-      assets: clone(state.assets), elevation: clone(state.elevation)
+      assets: clone(state.assets), trailerShots: clone(state.trailerShots),
+      elevation: clone(state.elevation)
     };
   }
 
@@ -597,6 +743,7 @@
     state.landmarks = clone(s.landmarks);
     state.challenges = clone(s.challenges);
     state.assets = clone(s.assets || []);
+    state.trailerShots = clone(s.trailerShots || []);
     state.elevation = clone(s.elevation || { hills: [], points: [], grid: null });
     state.selection = null;
     state.draft = null;
@@ -847,9 +994,14 @@
     $('view2DBtn').classList.toggle('on', !previewMode);
     $('preview3DBtn').classList.toggle('on', previewMode);
     $('previewFitBtn').hidden = !previewMode;
+    $('renderTools').hidden = !previewMode;
+    $('transformTools').hidden = !previewMode;
     if (p) {
       p.setActive(previewMode);
-      if (previewMode) p.resize();
+      if (previewMode) {
+        p.resize();
+        if (p.setEditMode) p.setEditMode(state.transformMode || 'view');
+      }
     }
     if (previewMode) {
       $('toolHint').textContent = p ? p.hintText : '';
@@ -857,6 +1009,63 @@
     } else {
       setTool(state.tool);
       setMessage('2D editor active.');
+    }
+  }
+
+  function setStyleMode(mode) {
+    mode = mode === 'realistic' ? 'realistic' : 'game';
+    document.querySelectorAll('#renderTools .style').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.style === mode);
+    });
+    const p = CC.MapPreview3D;
+    if (p && p.setStyleMode) p.setStyleMode(mode);
+    if (p) $('toolHint').textContent = p.hintText || '';
+    setMessage(mode === 'realistic'
+      ? 'Realistic preview: PBR lighting, shadows and building facades.'
+      : 'Game-style preview active.');
+  }
+
+  function setTransformMode(mode) {
+    state.transformMode = mode || 'view';
+    document.querySelectorAll('#transformTools .transform').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.transform === state.transformMode);
+    });
+    if (CC.MapPreview3D && CC.MapPreview3D.setEditMode) CC.MapPreview3D.setEditMode(state.transformMode);
+    if (CC.MapPreview3D) $('toolHint').textContent = CC.MapPreview3D.hintText || '';
+    setMessage('3D tool: ' + state.transformMode + '.');
+  }
+
+  function apply3DTransform(pick, values, phase) {
+    if (!pick || pick.kind === 'road') return;
+    const obj = getSelectedObject();
+    if (!obj) return;
+    if (phase === 'start') {
+      state.transformBase = clone(obj);
+      pushUndo();
+      return;
+    }
+    if (phase === 'end') {
+      state.transformBase = null;
+      updateSelectionForm();
+      render();
+      setMessage('3D transform applied.');
+      return;
+    }
+    const base = state.transformBase || obj;
+    if (values.x != null) obj.x = shotNumber(values.x, obj.x);
+    if (values.z != null) obj.z = shotNumber(values.z, obj.z);
+    if (values.rot != null) obj.rot = shotNumber(values.rot, obj.rot);
+    if (values.scale != null) {
+      const factor = Math.max(0.05, shotNumber(values.scale, 1));
+      if (obj.type === 'model' || obj.type === 'glb' || obj.type === 'gltf') {
+        obj.scale = Math.max(0.05, shotNumber(base.scale, 1) * factor);
+        const fp = modelFootprint(obj);
+        if (fp) { obj.w = fp.w; obj.l = fp.l; obj.h = fp.h; }
+      } else {
+        if (base.w != null) obj.w = Math.max(0.5, base.w * factor);
+        if (base.l != null) obj.l = Math.max(0.5, base.l * factor);
+        if (base.h != null) obj.h = Math.max(0.5, base.h * factor);
+      }
     }
   }
 
@@ -878,7 +1087,8 @@
       buildings: clone(state.buildings),
       landmarks: clone(state.landmarks),
       challenges: clone(state.challenges),
-      assets: clone(state.assets)
+      assets: clone(state.assets),
+      trailerShots: clone(state.trailerShots)
     };
   }
 
@@ -1231,7 +1441,8 @@
           mapName: patch.mapName || 'Coastal Cruise',
           roads: patch.roads || [], buildings: patch.buildings || [],
           landmarks: patch.landmarks || [], challenges: patch.challenges || [],
-          assets: patch.assets || [], elevation: patch.elevation || null
+          assets: patch.assets || [], trailerShots: patch.trailerShots || [],
+          elevation: patch.elevation || null
         });
         setMessage('Loaded patch from ' + file.name + '.');
       } catch (e) {
@@ -1448,7 +1659,7 @@
   function parseEditorJSON(obj) {
     const data = {};
     if (obj.world) data.world = clone(obj.world);
-    ['roads', 'buildings', 'landmarks', 'assets', 'challenges'].forEach(function (k) {
+    ['roads', 'buildings', 'landmarks', 'assets', 'challenges', 'trailerShots'].forEach(function (k) {
       if (Array.isArray(obj[k])) data[k] = clone(obj[k]);
     });
     if (obj.elevation) data.elevation = normalizeElevation(obj.elevation);
@@ -1463,7 +1674,7 @@
       buildTerrain();
       fitView();
     }
-    ['roads', 'buildings', 'landmarks', 'assets', 'challenges'].forEach(function (k) {
+    ['roads', 'buildings', 'landmarks', 'assets', 'challenges', 'trailerShots'].forEach(function (k) {
       if (Array.isArray(data[k])) state[k] = clone(data[k]);
     });
     if (data.elevation) state.elevation = normalizeElevation(data.elevation);
@@ -1498,6 +1709,154 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  /* ---------- trailer shot dialog ---------- */
+  function shotNumber(value, fallback) {
+    const n = Number(value);
+    return isFinite(n) ? n : fallback;
+  }
+
+  function renderShotList() {
+    const host = $('shotList');
+    if (!host) return;
+    host.textContent = '';
+    if (!state.trailerShots.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No trailer shots yet.';
+      host.appendChild(empty);
+      return;
+    }
+    state.trailerShots.forEach(function (shot, i) {
+      const row = document.createElement('div');
+      row.className = 'shotEntry';
+      const label = document.createElement('span');
+      label.textContent = shotNumber(i + 1, 0) + ' · ' + (shot.name || shot.vehicle || 'Shot') +
+        ' · ' + (shot.mode === 'straight' ? 'straight' : 'road');
+      row.appendChild(label);
+      const edit = document.createElement('button');
+      edit.textContent = 'Edit';
+      edit.addEventListener('click', function () { openShotDialog(i); });
+      row.appendChild(edit);
+      const del = document.createElement('button');
+      del.className = 'danger';
+      del.textContent = '✕';
+      del.title = 'Delete shot';
+      del.addEventListener('click', function () {
+        pushUndo();
+        state.trailerShots.splice(i, 1);
+        renderShotList(); render();
+        setMessage('Trailer shot deleted.');
+      });
+      row.appendChild(del);
+      host.appendChild(row);
+    });
+  }
+
+  function openShotDialog(index) {
+    const editing = Number(index) >= 0 && !!state.trailerShots[index];
+    const shot = editing ? state.trailerShots[index] : (state.trailerDraft || {});
+    state.shotEditIndex = editing ? index : -1;
+    const start = shot.start || {};
+    const finish = shot.finish || {};
+    $('shotName').value = shot.name || ('Shot ' + (state.trailerShots.length + 1));
+    $('shotVehicle').value = shot.vehicle || 'coupe';
+    $('shotMode').value = shot.mode || (isAirVehicle(shot.vehicle) ? 'straight' : 'road');
+    $('shotCamera').value = shotNumber(shot.camera, 0);
+    $('shotStartX').value = shotNumber(start.x, 0);
+    $('shotStartZ').value = shotNumber(start.z, 0);
+    $('shotStartAlt').value = shotNumber(start.alt, 0);
+    $('shotStartH').value = shotNumber(start.h, 0);
+    $('shotStartS').value = shotNumber(start.s, 0);
+    $('shotSpeed').value = shotNumber(shot.speed, 28);
+    $('shotFinishX').value = shotNumber(finish.x, 0);
+    $('shotFinishZ').value = shotNumber(finish.z, 0);
+    $('shotFinishAlt').value = shotNumber(finish.alt, isAirVehicle(shot.vehicle) ? 35 : 0);
+    $('shotDuration').value = shotNumber(shot.durationSec, 6);
+    $('shotBoost').value = shot.boost ? 'true' : 'false';
+    $('shotAudio').value = shot.audio || '';
+    $('shotNote').value = shot.note || '';
+    $('shotDeleteBtn').hidden = !editing;
+    $('shotDialog').hidden = false;
+    setTimeout(function () { $('shotName').focus(); $('shotName').select(); }, 0);
+  }
+
+  function closeShotDialog() {
+    $('shotDialog').hidden = true;
+    state.trailerDraft = null;
+    state.shotEditIndex = -1;
+    render();
+  }
+
+  function saveShot() {
+    const vehicle = $('shotVehicle').value || 'coupe';
+    let mode = $('shotMode').value || 'road';
+    if (isAirVehicle(vehicle)) mode = 'straight';
+    const shot = {
+      name: $('shotName').value.trim() || ('Shot ' + (state.trailerShots.length + 1)),
+      vehicle: vehicle,
+      mode: mode,
+      start: {
+        x: shotNumber($('shotStartX').value, 0), z: shotNumber($('shotStartZ').value, 0),
+        alt: shotNumber($('shotStartAlt').value, 0),
+        h: shotNumber($('shotStartH').value, 0), s: shotNumber($('shotStartS').value, 0)
+      },
+      finish: {
+        x: shotNumber($('shotFinishX').value, 0), z: shotNumber($('shotFinishZ').value, 0),
+        alt: shotNumber($('shotFinishAlt').value, 0)
+      },
+      speed: Math.max(1, shotNumber($('shotSpeed').value, 28)),
+      camera: shotNumber($('shotCamera').value, 0),
+      durationSec: Math.max(0.5, shotNumber($('shotDuration').value, 6)),
+      boost: $('shotBoost').value === 'true',
+      audio: $('shotAudio').value.trim() || null,
+      note: $('shotNote').value.trim() || ''
+    };
+    pushUndo();
+    if (state.shotEditIndex >= 0 && state.trailerShots[state.shotEditIndex]) {
+      state.trailerShots[state.shotEditIndex] = shot;
+    } else {
+      state.trailerShots.push(shot);
+    }
+    closeShotDialog();
+    renderShotList();
+    setMessage('Trailer shot saved: ' + shot.name + ' (' + mode + ').');
+  }
+
+  function deleteActiveShot() {
+    const i = state.shotEditIndex;
+    if (i < 0 || !state.trailerShots[i]) return;
+    pushUndo();
+    state.trailerShots.splice(i, 1);
+    closeShotDialog();
+    renderShotList();
+    setMessage('Trailer shot deleted.');
+  }
+
+  function exportTrailerShots() {
+    const blob = new Blob([JSON.stringify({ shots: state.trailerShots }, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, 'trailer-shots.json');
+    setMessage('Downloaded trailer-shots.json — render with npm run trailer -- --shots trailer-shots.json');
+  }
+
+  function showRenderCommand() {
+    setMessage('Render: npm run trailer -- --shots trailer-shots.json');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText('npm run trailer -- --shots trailer-shots.json').catch(function () {});
+    }
+  }
+
+  function openBlenderDialog() {
+    $('blenderToCode').textContent = 'node tools/blender-map-bridge.js to-blender js/MapEdits.js map.blend';
+    $('blenderFromCode').textContent = 'node tools/blender-map-bridge.js to-editor map.blend patch.json';
+    $('blenderDialog').hidden = false;
+  }
+
+  function downloadCurrentPatchJSON() {
+    const blob = new Blob([JSON.stringify(patchData(), null, 2)], { type: 'application/json' });
+    downloadBlob(blob, 'map-patch.json');
+    setMessage('Downloaded map-patch.json for Blender.');
   }
 
   /* ---------- new asset dialog ---------- */
@@ -1599,7 +1958,8 @@
   function updateZoomLabel() { $('zoomLabel').textContent = Math.round(state.view.scale * 100) + '%'; }
   function updateCounts() {
     $('counts').textContent = state.roads.length + ' roads · ' +
-      (state.buildings.length + state.landmarks.length + state.assets.length) + ' assets';
+      (state.buildings.length + state.landmarks.length + state.assets.length) + ' assets · ' +
+      state.trailerShots.length + ' shots';
   }
 
   function pointerPos(e) {
@@ -1674,8 +2034,30 @@
       return;
     }
 
+    if (state.tool === 'trailer') {
+      if (!state.trailerDraft || state.trailerDraft.finish) {
+        state.trailerDraft = { start: { x: world.x, z: world.z }, finish: null, vehicle: 'coupe', mode: 'road' };
+        setMessage('Trailer start set — click the finish point.');
+      } else {
+        state.trailerDraft.finish = { x: world.x, z: world.z };
+        openShotDialog(-1);
+        return;
+      }
+      render();
+      return;
+    }
+
     if (state.tool === 'building' || state.tool === 'bridge') {
       state.drag = { type: 'shape', tool: state.tool, anchor: world, current: world };
+      render();
+      return;
+    }
+
+    if (state.tool === 'paint') {
+      pushUndo();
+      state.drag = { type: 'paint', last: { x: world.x, z: world.z }, count: 0, index: 1 };
+      stampBrushAt(world.x, world.z, state.drag.index++);
+      state.drag.count++;
       render();
       return;
     }
@@ -1755,6 +2137,23 @@
         }
       } else if (d.type === 'shape') {
         d.current = world;
+      } else if (d.type === 'paint') {
+        const step = brushSettings().spacing;
+        const dx = world.x - d.last.x, dz = world.z - d.last.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.01) {
+          const n = Math.min(200, Math.floor(dist / step));
+          for (let i = 1; i <= n; i++) {
+            const t = (i * step) / dist;
+            stampBrushAt(d.last.x + dx * t, d.last.z + dz * t, d.index++);
+            d.count++;
+          }
+          if (n) {
+            const t = (n * step) / dist;
+            d.last.x += dx * t;
+            d.last.z += dz * t;
+          }
+        }
       }
     }
     render();
@@ -1769,11 +2168,13 @@
     const pos = pointerPos(e);
     const d = state.drag;
     const shape = d && d.type === 'shape' ? d : null;
+    const painted = d && d.type === 'paint' ? d.count : 0;
     if (shape) shape.current = snap(screenToWorld(pos.sx, pos.sy));
     state.drag = null;
     canvas.classList.remove('panning');
     updateSelectionForm();
     render();
+    if (painted) setMessage('Painted ' + painted + ' brush stamp' + (painted === 1 ? '' : 's') + '.');
     if (shape) {
       askAssetDetails(shape.tool, 'Editor ' + (ASSET_LABELS[shape.tool] || 'Asset')).then(function (info) {
         if (!info) { setMessage('Asset creation cancelled.'); return; }
@@ -1804,10 +2205,24 @@
       if (e.key === 'Escape') { e.preventDefault(); closeAssetDialog(null); }
       return;
     }
+    if (!$('shotDialog').hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); closeShotDialog(); }
+      else if (e.key === 'Enter' && e.target === $('shotName')) { e.preventDefault(); saveShot(); }
+      return;
+    }
+    if (!$('blenderDialog').hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); $('blenderDialog').hidden = true; }
+      return;
+    }
     const tag = (e.target && e.target.tagName || '').toLowerCase();
     const typing = tag === 'input' || tag === 'select' || tag === 'textarea';
     if (!typing && e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault(); setPreviewMode(!previewMode); return;
+    }
+    if (!typing && previewMode && ['1', '2', '3', '4'].indexOf(e.key) !== -1) {
+      e.preventDefault();
+      setTransformMode({ '1': 'view', '2': 'move', '3': 'rotate', '4': 'scale' }[e.key]);
+      return;
     }
     if (typing || tag === 'button') return;
     if (e.code === 'Space') { state.spaceDown = true; canvas.style.cursor = 'grab'; e.preventDefault(); }
@@ -1815,7 +2230,7 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
     if (e.key === 'Enter' && state.tool === 'road') { finishRoad(); return; }
     if (e.key === 'Escape') {
-      state.draft = null; state.selection = null;
+      state.draft = null; state.selection = null; state.trailerDraft = null;
       $('draftHint').hidden = true;
       updateSelectionForm(); render();
       return;
@@ -1828,7 +2243,7 @@
       else { fitView(); render(); }
       return;
     }
-    const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', m: 'model', x: 'assetErase', h: 'pan' };
+    const shortcuts = { v: 'select', b: 'road', e: 'roadErase', r: 'building', g: 'bridge', t: 'tree', w: 'paint', m: 'model', k: 'trailer', x: 'assetErase', h: 'pan' };
     const k = e.key.toLowerCase();
     if (shortcuts[k]) {
       if (previewMode) setPreviewMode(false);
@@ -1856,14 +2271,63 @@
   $('zoomInBtn').addEventListener('click', function () { zoomAt(1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); });
   $('zoomOutBtn').addEventListener('click', function () { zoomAt(1 / 1.2, canvas.clientWidth / 2, canvas.clientHeight / 2); });
   $('zoomFitBtn').addEventListener('click', function () { fitView(); render(); });
-  $('view2DBtn').addEventListener('click', function () { setPreviewMode(false); });
+  // This is the primary view toggle: clicking it while already in 2D enters
+  // 3D, and clicking it in 3D returns to the 2D editor. The dedicated 3D
+  // button below still jumps straight to 3D.
+  $('view2DBtn').addEventListener('click', function () { setPreviewMode(!previewMode); });
   $('preview3DBtn').addEventListener('click', function () { setPreviewMode(true); });
   $('previewFitBtn').addEventListener('click', function () {
     if (CC.MapPreview3D) CC.MapPreview3D.focus();
   });
+  document.querySelectorAll('#renderTools .style').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (!previewMode) setPreviewMode(true);
+      setStyleMode(b.dataset.style);
+    });
+  });
+  document.querySelectorAll('#transformTools .transform').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (!previewMode) setPreviewMode(true);
+      setTransformMode(b.dataset.transform);
+    });
+  });
+  $('addShotBtn').addEventListener('click', function () {
+    if (previewMode) setPreviewMode(false);
+    setTool('trailer');
+    state.trailerDraft = null;
+    setMessage('Click a start point, then a finish point on the map.');
+  });
+  $('exportShotsBtn').addEventListener('click', exportTrailerShots);
+  $('renderShotsBtn').addEventListener('click', showRenderCommand);
+  $('shotCancelBtn').addEventListener('click', closeShotDialog);
+  $('shotSaveBtn').addEventListener('click', saveShot);
+  $('shotDeleteBtn').addEventListener('click', deleteActiveShot);
+  $('blenderSendBtn').addEventListener('click', openBlenderDialog);
+  $('blenderCloseBtn').addEventListener('click', function () { $('blenderDialog').hidden = true; });
+  $('blenderPatchBtn').addEventListener('click', downloadCurrentPatchJSON);
+  $('blenderImportBtn').addEventListener('click', function () {
+    $('blenderDialog').hidden = true;
+    $('importInput').click();
+  });
   $('roadWidth').addEventListener('input', function () { $('roadWidthOut').textContent = $('roadWidth').value; render(); });
   $('treeScale').addEventListener('input', function () { $('treeScaleOut').textContent = Number($('treeScale').value).toFixed(1); });
   $('modelScale').addEventListener('input', function () { $('modelScaleOut').textContent = Number($('modelScale').value).toFixed(2); });
+  $('paintKind').addEventListener('change', function () {
+    $('paintModelRow').hidden = $('paintKind').value !== 'model';
+  });
+  $('paintSize').addEventListener('input', function () {
+    $('paintSizeOut').textContent = $('paintSize').value;
+    render();
+  });
+  $('paintSpacing').addEventListener('input', function () {
+    $('paintSpacingOut').textContent = $('paintSpacing').value;
+  });
+  $('paintJitter').addEventListener('input', function () {
+    $('paintJitterOut').textContent = $('paintJitter').value + '%';
+  });
+  $('paintScale').addEventListener('input', function () {
+    $('paintScaleOut').textContent = Number($('paintScale').value).toFixed(2);
+  });
   ['showRoads', 'showBuildings', 'showLandmarks', 'showCustom'].forEach(function (id) {
     $(id).addEventListener('change', function () {
       state.layers[id.replace('show', '').toLowerCase()] = $(id).checked;
@@ -1892,8 +2356,8 @@
   $('copyBtn').addEventListener('click', copyPatch);
   $('resetBtn').addEventListener('click', function () {
     pushUndo();
-    const baked = CC.bakedMap || {};
-    const fresh = CC.simplifyRoads ? CC.simplifyRoads(clone(baked.roads || [])) : clone(baked.roads || []);
+    const baked = gameMapData();
+    const fresh = gameBaseRoads();
     restore({
       world: clone(DEFAULT_WORLD),
       newMap: false,
@@ -1901,13 +2365,16 @@
       gameName: '',
       mapName: 'Coastal Cruise',
       roads: fresh,
-      buildings: clone(baked.buildings || []),
-      landmarks: clone(baked.landmarks || []),
-      challenges: clone(baked.challenges || []),
+      buildings: clone(baked.buildings),
+      landmarks: clone(baked.landmarks),
+      challenges: clone(baked.challenges),
       assets: [],
+      trailerShots: [],
       elevation: { hills: [], points: [], grid: null }
     });
-    setMessage('Reloaded the baked map (runtime roads reapplied).');
+    buildTerrain();
+    if (CC.MapPreview3D) CC.MapPreview3D.refresh();
+    setMessage('Reloaded the current game map.');
   });
   $('loadBtn').addEventListener('click', function () { $('loadInput').click(); });
   $('loadInput').addEventListener('change', function () {
@@ -1922,17 +2389,56 @@
   window.addEventListener('resize', resize);
 
   /* ---------- boot ---------- */
-  fillModelSelect($('modelKey'), MODEL_KEYS[0]);
-  fillModelSelect($('assetModel'), MODEL_KEYS[0]);
-  fillModelSelect($('selModel'), MODEL_KEYS[0]);
-  initData();
-  buildTerrain();
-  if (CC.MapPreview3D) CC.MapPreview3D.init($('previewWrap'), null, function () { return state; });
-  resize();
-  fitView();
-  if (currentPatch()) setMessage('Editing the patch in js/MapEdits.js.');
-  setTool('select');
-  updateSelectionForm();
-  updateHistoryButtons();
-  render();
+  function boot() {
+    fillModelSelect($('modelKey'), MODEL_KEYS[0]);
+    fillModelSelect($('assetModel'), MODEL_KEYS[0]);
+    fillModelSelect($('selModel'), MODEL_KEYS[0]);
+    fillModelSelect($('paintModel'), MODEL_KEYS[0]);
+    initData();
+    buildTerrain();
+    if (CC.MapPreview3D) {
+      CC.MapPreview3D.init($('previewWrap'), null, function () { return state; });
+      if (CC.MapPreview3D.setSelectHandler) {
+        CC.MapPreview3D.setSelectHandler(function (pick) {
+          if (pick && (pick.kind === 'road' || pick.kind === 'asset' || pick.kind === 'building' || pick.kind === 'landmark')) {
+            state.selection = pick;
+            updateSelectionForm();
+            render();
+            setMessage(pick.kind === 'road' ? 'Road selected in 3D.' : 'Object selected in 3D.');
+          } else {
+            state.selection = null;
+            updateSelectionForm();
+            render();
+          }
+        });
+      }
+      if (CC.MapPreview3D.setTransformHandler) CC.MapPreview3D.setTransformHandler(apply3DTransform);
+      if (CC.MapPreview3D.setEditMode) CC.MapPreview3D.setEditMode(state.transformMode);
+      if (CC.MapPreview3D.setStyleMode) CC.MapPreview3D.setStyleMode('game');
+    }
+    renderShotList();
+    resize();
+    fitView();
+    if (currentPatch()) setMessage('Editing the patch in js/MapEdits.js.');
+    else setMessage('Editing the current game map.');
+    setTool('select');
+    updateSelectionForm();
+    updateHistoryButtons();
+    render();
+  }
+
+  // Load the same baked image map the game uses before reading any map data.
+  // ImageMap.apply() installs the game's coastal/height/surface functions and
+  // paints the ground canvas, so the editor never drifts to procedural data.
+  if (CC.ImageMap && CC.ImageMap.load) {
+    CC.ImageMap.load(CC.imageMapDef && CC.imageMapDef.src).then(function (ok) {
+      if (ok && CC.ImageMap.apply) CC.ImageMap.apply();
+      boot();
+    }).catch(function (err) {
+      console.warn('[MapEditor] Could not load the game map:', err);
+      boot();
+    });
+  } else {
+    boot();
+  }
 })();

@@ -316,13 +316,21 @@
 
   // Precompute segment data; used for surface queries, flattening and NPCs.
   // Called again by the image map after it generates a new road network.
+  CC.roadPointAt = function (road, i) {
+    const n = road.points.length;
+    if (!n) return null;
+    return road.points[road.closed ? ((i % n) + n) % n : i];
+  };
+
   CC.buildRoadSegments = function () {
     CC.roadSegments = [];
     CC.roadDefs.forEach(function (road, ri) {
       road._index = ri;
       road._cum = [0];
-      for (let i = 0; i < road.points.length - 1; i++) {
-        const a = road.points[i], b = road.points[i + 1];
+      const count = road.points.length - (road.closed ? 0 : 1);
+      for (let i = 0; i < count; i++) {
+        const a = CC.roadPointAt(road, i), b = CC.roadPointAt(road, i + 1);
+        if (!a || !b) continue;
         const dx = b[0] - a[0], dz = b[1] - a[1];
         const len = Math.hypot(dx, dz) || 1;
         CC.roadSegments.push({
@@ -1013,7 +1021,7 @@
     let i = 0;
     while (i < road._cum.length - 2 && road._cum[i + 1] < s) i++;
     const t = (s - road._cum[i]) / (road._cum[i + 1] - road._cum[i]);
-    const a = road.points[i], b = road.points[i + 1];
+    const a = CC.roadPointAt(road, i), b = CC.roadPointAt(road, i + 1);
     return {
       x: util.lerp(a[0], b[0], t),
       z: util.lerp(a[1], b[1], t),

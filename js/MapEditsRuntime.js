@@ -18,7 +18,8 @@
     buildings: null,
     landmarks: null,
     challenges: null,
-    assets: []
+    assets: [],
+    trailerShots: []
   };
   CC.mapEdits = Object.assign({}, EMPTY, CC.mapEdits || {});
 
@@ -96,6 +97,9 @@
       CC.challengeDefs = IM.challenges;
     }
     CC.roadDefs = IM.roads;
+    // Trailer shots are consumed by tools/trailer.js, not the gameplay loop,
+    // but expose them here so the patch is queryable from the game console.
+    CC.trailerShots = Array.isArray(edits.trailerShots) ? edits.trailerShots : [];
     return true;
   };
 

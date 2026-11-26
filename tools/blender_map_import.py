@@ -10,6 +10,13 @@ pines and rocks are visible in Blender. Every placement gets a tagged parent
 empty so blender_map_export.py can round-trip it. Use --proxies for the old
 lightweight empties/cones instead.
 
+Tagged objects carry cc_type values road, building, bridge, tree, model,
+elevation, landmark and challenge. Landmarks/challenges are empties whose
+cc_data JSON string holds the full original object (cc_id/cc_name are also
+set for readability). Scene custom properties cc_trailer_shots and
+cc_patch_meta hold JSON text for patch trailerShots and other patch metadata
+so blender_map_export.py can restore them verbatim.
+
 Options:
   --clear            Delete current objects before importing.
   --save FILE        Save the result as a .blend file.
@@ -171,6 +178,27 @@ def set_props(obj, data):
     obj['cc_description'] = data.get('description', '')
     if data.get('hidden'):
         obj['cc_hidden'] = True
+
+
+def json_text(value):
+    """Deterministic JSON text for Blender custom properties."""
+    return json.dumps(value, sort_keys=True, ensure_ascii=True,
+                      separators=(',', ':'))
+
+
+def readable_prop(data, *names):
+    for name in names:
+        value = data.get(name)
+        if value is not None:
+            return str(value)
+    return ''
+
+
+def as_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def color_int(value, default):
@@ -411,6 +439,26 @@ def make_elevation(point, coll):
     obj['cc_r'] = float(point.get('r', 25))
 
 
+def make_info_empty(data, kind, index, coll):
+    """Keep an arbitrary landmark/challenge object intact for export."""
+    obj = bpy.data.objects.new('{}_{:04d}'.format(kind.upper(), index), None)
+    obj.empty_display_type = 'PLAIN_AXES'
+    obj.location = (
+        as_float(data.get('x')),
+        -as_float(data.get('z')),
+        as_float(data.get('y')),
+    )
+    coll.objects.link(obj)
+    obj['cc_type'] = kind
+    obj['cc_index'] = int(index)
+    obj['cc_data'] = json_text(data)
+    obj['cc_id'] = readable_prop(data, 'id', 'key') or 'blend_' + obj.name
+    obj['cc_name'] = readable_prop(data, 'name', 'title', 'label') or obj.name
+    if data.get('hidden'):
+        obj['cc_hidden'] = True
+    return obj
+
+
 def main():
     patch = load_patch(src_path)
     models = {} if use_proxies else load_model_catalog()
@@ -420,6 +468,8 @@ def main():
     roads_coll = collection('CC Roads')
     assets_coll = collection('CC Assets')
     elev_coll = collection('CC Elevation')
+    landmarks_coll = collection('CC Landmarks')
+    challenges_coll = collection('CC Challenges')
 
     for road in patch.get('roads') or []:
         make_road(road, roads_coll)
@@ -434,16 +484,35 @@ def main():
     elevation = patch.get('elevation') or {}
     for point in elevation.get('points') or []:
         make_elevation(point, elev_coll)
+    for index, landmark in enumerate(patch.get('landmarks') or []):
+        make_info_empty(landmark, 'landmark', index, landmarks_coll)
+    for index, challenge in enumerate(patch.get('challenges') or []):
+        make_info_empty(challenge, 'challenge', index, challenges_coll)
 
+    scene = bpy.context.scene
     if patch.get('mapName'):
-        bpy.context.scene['cc_map_name'] = patch['mapName']
+        scene['cc_map_name'] = patch['mapName']
+    if 'trailerShots' in patch:
+        scene['cc_trailer_shots'] = json_text(patch['trailerShots'])
+    elif 'cc_trailer_shots' in scene.keys():
+        del scene['cc_trailer_shots']
+
+    data_keys = {'roads', 'buildings', 'assets', 'elevation', 'landmarks',
+                 'challenges', 'trailerShots'}
+    meta = {key: value for key, value in patch.items() if key not in data_keys}
+    if meta:
+        scene['cc_patch_meta'] = json_text(meta)
+    elif 'cc_patch_meta' in scene.keys():
+        del scene['cc_patch_meta']
 
     if save_path:
         os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=save_path)
-    print('Imported {} roads, {} assets from {} ({} baked models{})'.format(
-        len(patch.get('roads') or []), len(patch.get('assets') or []), src_path,
-        len(models), ' — proxies' if use_proxies else ''))
+    print('Imported {} roads, {} assets, {} landmarks, {} challenges from {} '
+          '({} baked models{})'.format(
+              len(patch.get('roads') or []), len(patch.get('assets') or []),
+              len(patch.get('landmarks') or []), len(patch.get('challenges') or []),
+              src_path, len(models), ' — proxies' if use_proxies else ''))
 
 
 main()

@@ -85,7 +85,17 @@ JSON patch shape:
 /Applications/Blender.app/Contents/MacOS/Blender -b \
   --python tools/blender_map_import.py -- js/MapEdits.js --clear --proxies \
   --save /tmp/coastal-map-proxies.blend
+
+# One-command helpers (same operations with friendlier paths/errors)
+node tools/blender-map-bridge.js to-blender js/MapEdits.js map.blend
+node tools/blender-map-bridge.js to-editor map.blend patch.json
 ```
+
+The editor's **Blender** button opens these commands and can download the
+current patch as JSON. After exporting from Blender, use **Import data** (or
+**Import Blender JSON** in that dialog) to load the patch back. The round trip
+preserves roads, buildings, bridges, trees, baked models, elevation, landmarks,
+challenges and trailer shots.
 
 The importer reads the model geometry embedded in `GeneratedAssets.js` and
 `DownloadedAssets.js`, so cars, houses, pines and downloaded rocks appear as
@@ -93,8 +103,10 @@ visible meshes in Blender. Each placement gets a tagged parent empty; the
 child `part_*` meshes are display-only, so exporting again produces the same
 patch rather than duplicating assets.
 
-Set `cc_type` on objects to `road`, `building`, `bridge`, `tree`, `model`, or
-`elevation`. For `model`, set `cc_model_key` to a baked model name (for example
+Set `cc_type` on objects to `road`, `building`, `bridge`, `tree`, `model`,
+`elevation`, `landmark`, or `challenge`. Landmarks and challenges round-trip as
+full JSON objects in the `cc_data` custom property. For `model`, set
+`cc_model_key` to a baked model name (for example
 `retro1`, `sedan`, `pine`, or `downloadedRock0`) plus optional `cc_scale`,
 `cc_y`, `cc_rot`, and `cc_color`. Name prefixes such as `model_`, `road_`, and
 `elev_` also work. Blender coordinates map to the game as `X → x`,
@@ -102,10 +114,13 @@ Set `cc_type` on objects to `road`, `building`, `bridge`, `tree`, `model`, or
 
 ## Map editor
 
-Open **`map-editor.html`** directly (no server needed). It shows the live road
-network with an X/Z coordinate grid over the coast, river and town. Use
-**New map** to start a blank project with your own width/height (centred on
-X0/Z0); exported patches then redefine the game's world bounds and base map.
+Open **`map-editor.html`** directly (no server needed). It loads the same baked
+image map as the game: the 2D backdrop is the exact ground canvas used in
+`index.html`, and roads, buildings, landmarks, coast rules and terrain heights
+come from the same runtime map data. An X/Z coordinate grid sits over the coast,
+river and town. Use **New map** to start a blank project with your own
+width/height (centred on X0/Z0); exported patches then redefine the game's world
+bounds and base map.
 **Import data** reads OSM XML, GeoJSON, or this editor's JSON patch shape,
 including roads, buildings, trees, baked models and elevation. OSM `highway` ways become
 roads, `building` ways become buildings, `natural=tree` nodes become trees, and
@@ -118,15 +133,29 @@ Tools:
 - **Erase road** (`E`) — click a segment to split it, `Shift`+click to delete the road.
 - **Building** (`R`) and **Bridge** (`G`) — drag to size; a bridge also adds a drivable road.
 - **Tree** (`T`) — place a primitive tree.
+- **Paint** (`W`) — Photoshop-style stamp brush. Drag to paint trees or any baked model; the Brush panel sets brush size, stamp spacing, scatter, scale, random rotation and scale variation. A whole drag is one undo step.
 - **Model** (`M`) — place any baked model from the brush list (vehicles, pines, houses, trailers, rocks and props). Rotation and height are editable in the inspector.
+- **Trailer** (`K`) — click a start point, then a finish point. The dialog stores vehicle, mode, camera, speed, duration and optional audio as a shot in the patch.
 - **Erase asset** (`X`) — remove any placed asset. New assets open a dialog for a name and description; descriptions stay editable in the inspector.
 - **Pan** (`H`) / middle mouse / `Space`+drag; scroll to zoom; `0` fits the map.
+
+The **2D / 3D preview** toggle (or `P`) renders the map with the same baked models
+as the game. In 3D, **Game / Realistic** switches between the in-game PS2 look
+and an editor-only Blender/Unreal-style preview with softer PBR materials,
+shadows and detailed building facades; the game itself is unchanged. Baked
+**Model** assets show their real geometry. Click to select an object, then use
+**View / Move / Rotate / Scale** (or keys `1`–`4`) for Blender-like gizmo
+editing. Left-drag orbits in View mode; right/middle/`Shift`+drag pans, wheel
+zooms and double-click fits. Move changes X/Z, Rotate changes Y rotation, and
+Scale changes the model scale or building footprint. Switch back to 2D for road
+drawing and map-wide tools.
 
 Use **Apply to game** to export `MapEdits.js`. Save that file over
 `js/MapEdits.js`, then hard-refresh `index.html`. The patch replaces the baked
 roads/assets after the game's normal runtime overrides, so the editor view is
-what you drive. **Load patch** reopens an exported patch, **Reset** returns to
-the baked map, and **Copy JS** copies the patch for manual saving.
+what you drive. **Load patch** reopens an exported patch, **Reset** discards it
+and reloads the current game map, and **Copy JS** copies the patch for manual
+saving.
 
 For a map that is its own game rather than an edit of Coastal Cruise, choose
 **New game** in the editor, enter a game title, then click **Create game
@@ -180,7 +209,42 @@ frames are rendered per timeline second; lower values finish faster on software
 GL. `--scale` resizes the encoded video, so a 960×540 capture can be delivered
 as 1920×1080. `--keep-raw` keeps the intermediate JPEG frames. The scripted
 input path is in `tools/trailer-runtime.js`; change the waypoint lists and
-segment durations there to restage the trailer.
+segment durations there to restage the default trailer.
+
+### Individual clips for Filmcraft
+
+Use the map editor's **Trailer** tool to save shots, then **Export JSON**. Each
+shot renders as its own clip in `capture/clips/`:
+
+```bash
+npm run trailer -- --shots trailer-shots.json --fps 12 \
+  --width 960 --height 540 --scale 1920x1080
+```
+
+Ground shots with `"mode": "road"` call the game's existing `CC.computeRoute()`
+GPS router, densify the road-centerline path, and steer along it. They never
+fall back to a straight cross-country path; if no drivable road route exists the
+shot fails with a clear error. Aircraft, jetpacks and FPV drones use
+`"mode": "straight"` and fly directly to the finish `x/z/alt`. Air shots should
+leave `audio` empty and let Filmcraft use one continuous `base_211` track.
+
+A shot looks like this:
+
+```json
+{
+  "name": "01-main-street",
+  "vehicle": "coupe",
+  "mode": "road",
+  "start": { "x": -188, "z": -60, "h": 0, "s": 0 },
+  "finish": { "x": 125, "z": -58 },
+  "speed": 28,
+  "camera": 0,
+  "durationSec": 6,
+  "boost": false,
+  "audio": null,
+  "note": "Main Street sweep"
+}
+```
 
 The game opens with a **“The Harbor” intro splash screen**. Choose **Start Cruising** (or press `Enter`, or gamepad `A`) for the gate challenges, or **Free Roam** (or press `F`) to hide the rings and drive with no timer. That first gesture also enables audio and starts the radio; browsers block autoplay until you interact with the page. While the town loads you can choose a **local music or video file** with the 🎵/🎬 buttons on the splash; it loops in the background and stops the moment you start driving. Nothing is uploaded — the file stays on your computer.
 
@@ -273,7 +337,7 @@ The game reads `js/mapdata.js` at startup. If it is missing, the game builds the
 ## What's in the game
 
 - **More than a dozen rides** with distinct handling, including coupes, muscle cars, a taxi, limousine, off-road vehicle, a full-size **bus**, a small outboard **boat** with wake particles and shoreline bouncing, a **plane**, a **helicopter**, and an **FPV Kamikaze Quad**. `Shift` climbs and `Space` descends in the aircraft (the helicopter's collective is speed-neutral, so it can climb straight up); the boat boards from its marina slip (key `7`), keys `8`/`9` spawn planes and helicopters from the airport, `0` launches the FPV quad from its airport pad, and `U` selects a bus that follows a fixed route and stops at every painted bus stop with visible riders.
-- **Retro water:** the old scrolling-noise water texture is gone. Two scrolling, pixelated low-poly planes use nearest-filtered 64×64 canvas textures and flat-shaded Phong facets. A third, unscrolled sheet covers only the river, so the channel stays glassy flat while the bay still swells. A single deterministic `getWaterHeight(x, z, time)` drives both the visible swells and four-corner pontoon buoyancy, so boats rock on the bay but sit level in the river, while cars wallow and sink before the deep-water reset. See `js/RetroWater.js` for tuning.
+- **Retro water:** the old scrolling-noise water texture is gone. The bay now uses a moving diamond-grid shimmer like the harbour reference: a solid nearest-filtered 64×64 pixel base plus an alpha-only ridge sheet scroll in opposite directions over flat-shaded Phong facets. A third, unscrolled sheet covers only the river, so the channel stays glassy flat while the bay still swells. A single deterministic `getWaterHeight(x, z, time)` drives both the visible swells and four-corner pontoon buoyancy, so boats rock on the bay but sit level in the river, while cars wallow and sink before the deep-water reset. See `js/RetroWater.js` for tuning.
 - **On-foot mode:** jogs at speed with the same animated limbs as the townsfolk, and holding `Shift` switches to a GTA-style sprint with a quicker stride and a stamina bar under the speedometer. Sprint drains stamina; when it empties you must recover before sprinting again. Swims in deep water and holds `Space` to dive to the sea floor. Press `E` (gamepad R3) to hop out and back in again, or carjack any nearby drivable vehicle — parked and moving cars, buses, cruisers, gang bikes, NPC boats and parked airport aircraft; stepping out to one side keeps your position.
 - **Radio:** ten stations, including **Playback FM**, Coastal FM, Cruise 101, Island Wave and Moonlight, each with its own synthesized style out of the box. To use your own music, drop the matching audio files into the `audio/` folder (or `.wav`/`.ogg`); they are picked up automatically and missing files fall back to the synth station. See `audio/README.md` for details. Change station with `B`, gamepad **D-pad up**, or the 📻 HUD button; toggle music with `N`, L3 or the ♪ button. The radio is silent in pedestrian mode (`6`) and resumes the same station when you get back into a vehicle.
 - **Sound & display menu:** `P` or the ⚙ SOUND button opens a menu with **Master sound**, **Music level** and **Game sounds / effects** sliders (saved locally), plus weather and time-of-day controls. The **⛶ FULL SCREEN** button fills the display, and **Full screen on start** remembers the choice for your next drive. The loading music/video volume follows the master slider.
@@ -307,7 +371,11 @@ tools/import-assets.js regenerates js/GeneratedAssets.js from the CC0 sources
 tools/bake-craftpix-sky.py adds the composited sky paintings to js/GeneratedAssets.js
 tools/import-downloaded-assets.js regenerates js/DownloadedAssets.js
 tools/trailer.js scripted Playwright trailer capture + MP4 muxing
-tools/trailer-runtime.js browser-side camera/input timeline
+tools/trailer-runtime.js browser-side camera/input timeline, road-following shots
+tools/blender_map_import.py map patch -> Blender 3.6 scene
+tools/blender_map_export.py Blender scene -> map patch
+tools/blender-map-bridge.js one-command Blender round-trip helper
+js/MapPreview3D.js editor 3D preview + selection/move/rotate/scale gizmos
 js/AssetLoader.js baked mesh batching, materials and prop building
 js/world.js       terrain, roads, landmarks, homes, trees, props, gates, particles
 js/details.js     road markings, signs, signals, lamps, poles, marina, extra vegetation
