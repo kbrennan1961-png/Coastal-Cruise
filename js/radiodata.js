@@ -1,10 +1,10 @@
 /* Coastal Cruise - radio station list.
-   Radio works offline. Stations with no audio file use a distinct synthesized
-   station instead, so changing stations always does something.
+   Radio works offline. Every station uses a bundled MP3 in audio/; a missing
+   or unplayable file falls back to silence instead of a synthesized station.
 
-   Drop compressed audio in the audio/ folder using the filenames below. The
-   game tries each file in order and falls back to the built-in style when a
-   file is missing or cannot play from file://. See MEDIA-GUIDE.md for settings.
+   Keep the compressed audio filenames below in sync with audio/. The game
+   tries each entry in order, so adding a secondary format is still possible,
+   but the published build intentionally ships MP3s only. See MEDIA-GUIDE.md.
 */
 (function () {
   'use strict';
@@ -14,61 +14,61 @@
     {
       name: 'COASTAL FM',
       format: 'Chill adult contemporary',
-      files: ['audio/coastal-fm.mp3', 'audio/coastal-fm.ogg', 'audio/coastal-fm.wav'],
+      files: ['audio/coastal-fm.mp3'],
       fallback: 'chill'
     },
     {
       name: 'CRUISE 101',
       format: 'Upbeat cruising pop/rock',
-      files: ['audio/cruise-101.mp3', 'audio/cruise-101.ogg', 'audio/cruise-101.wav'],
+      files: ['audio/cruise-101.mp3'],
       fallback: 'cruise'
     },
     {
       name: 'PLAYBACK FM',
       format: 'Old-school hip-hop and R&B',
-      files: ['audio/playback-fm.mp3', 'audio/playback-fm.ogg', 'audio/playback-fm.wav'],
+      files: ['audio/playback-fm.mp3'],
       fallback: 'retro'
     },
     {
       name: 'ISLAND WAVE',
       format: 'Reggae and tropical',
-      files: ['audio/island-wave.mp3', 'audio/island-wave.ogg', 'audio/island-wave.wav'],
+      files: ['audio/island-wave.mp3'],
       fallback: 'island'
     },
     {
       name: 'MOONLIGHT',
       format: 'Late-night jazz and soul',
-      files: ['audio/moonlight.mp3', 'audio/moonlight.ogg', 'audio/moonlight.wav'],
+      files: ['audio/moonlight.mp3'],
       fallback: 'night'
     },
     {
       name: 'OUTLAW 99',
       format: 'Country and twang',
-      files: ['audio/outlaw-99.mp3', 'audio/outlaw-99.ogg', 'audio/outlaw-99.wav'],
+      files: ['audio/outlaw-99.mp3'],
       fallback: 'country'
     },
     {
       name: 'NEON PULSE',
       format: 'Synthwave and electronic',
-      files: ['audio/neon-pulse.mp3', 'audio/neon-pulse.ogg', 'audio/neon-pulse.wav'],
+      files: ['audio/neon-pulse.mp3'],
       fallback: 'pulse'
     },
     {
       name: 'BAY NEWS TALK',
       format: 'News and call-in talk',
-      files: ['audio/bay-news-talk.mp3', 'audio/bay-news-talk.ogg', 'audio/bay-news-talk.wav'],
+      files: ['audio/bay-news-talk.mp3'],
       fallback: 'talk'
     },
     {
       name: 'SPORTS REEL',
       format: 'Sports talk and highlights',
-      files: ['audio/sports-reel.mp3', 'audio/sports-reel.ogg', 'audio/sports-reel.wav'],
+      files: ['audio/sports-reel.mp3'],
       fallback: 'sports'
     },
     {
       name: 'DRIVE-IN OLDIES',
       format: 'Classic rock and oldies',
-      files: ['audio/drive-in-oldies.mp3', 'audio/drive-in-oldies.ogg', 'audio/drive-in-oldies.wav'],
+      files: ['audio/drive-in-oldies.mp3'],
       fallback: 'oldies'
     }
   ];

@@ -84,6 +84,9 @@
       if (!victim) return false;
       victim._crimeHealth = (victim._crimeHealth == null ? 2 : victim._crimeHealth) - 1;
       victim._crimeHitAt = (CC.Game && CC.Game.time) || 0;
+      if (victim.downloaded && victim.downloaded.trigger) {
+        victim.downloaded.trigger(victim._crimeHealth <= 0 ? 'Death' : 'Hit');
+      }
       this.lastVictim = victim;
       this.assaults++;
       if (CC.NPCSystem && CC.NPCSystem.reportCrime && !victim._crimeReported) {

@@ -1134,12 +1134,17 @@
       }, this);
 
       // Longest first, so the spawn point and traffic use the main roads.
-      roads.sort(function (a, b) {
-        let la = 0, lb = 0;
-        for (let i = 1; i < a.points.length; i++) la += U.distance2D(a.points[i][0], a.points[i][1], a.points[i - 1][0], a.points[i - 1][1]);
-        for (let i = 1; i < b.points.length; i++) lb += U.distance2D(b.points[i][0], b.points[i][1], b.points[i - 1][0], b.points[i - 1][1]);
-        return lb - la;
+      // Cache the length once: the old comparator recomputed every point sum
+      // O(n log n) times during startup.
+      roads.forEach(function (road) {
+        let len = 0;
+        for (let i = 1; i < road.points.length; i++) {
+          len += U.distance2D(road.points[i][0], road.points[i][1],
+            road.points[i - 1][0], road.points[i - 1][1]);
+        }
+        road._length = len;
       });
+      roads.sort(function (a, b) { return b._length - a._length; });
       return roads;
     },
 

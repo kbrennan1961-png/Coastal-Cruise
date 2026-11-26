@@ -169,7 +169,9 @@
     update: function (dt, playerPos, npcs) {
       if (!this.ready) return;
       const rng = Math.random;
-      const t = performance.now() * 0.001;
+      // Advance with simulation dt so pausing/tab switches do not jump the
+      // swim animation or desync it from the rest of the world.
+      const t = (this._swimTime = (this._swimTime || 0) + dt);
       const px = playerPos ? playerPos.x : 0;
       const pz = playerPos ? playerPos.z : 0;
 
@@ -177,30 +179,45 @@
       for (let i = 0; i < this.schools.length; i++) {
         const school = this.schools[i];
         if (school.piranha) {
-          // Swarm nearest contact: player in/near water or any NPC in water
-          let target = null;
-          let bestD = 80;
-          if (CC.coast.isWater(px, pz) || CC.coast.distanceToWater(px, pz) < 6) {
-            const d = Math.hypot(px - school.center.x, pz - school.center.z);
-            if (d < bestD) { bestD = d; target = { x: px, z: pz }; }
-          }
-          if (npcs) {
-            const list = npcs.pedestrians || npcs;
-            for (let j = 0; j < list.length; j++) {
-              const p = list[j];
-              const pos = p.position || p.pos;
-              if (!pos) continue;
-              if (!CC.coast.isWater(pos.x, pos.z) && CC.coast.distanceToWater(pos.x, pos.z) > 4) continue;
-              const d = Math.hypot(pos.x - school.center.x, pos.z - school.center.z);
-              if (d < bestD) { bestD = d; target = { x: pos.x, z: pos.z }; }
+          // Contact scans are throttled: a fifth-second delay is invisible in
+          // the swarm but removes an all-NPC water-query loop every frame.
+          school.scanTimer = (school.scanTimer || 0) - dt;
+          if (school.scanTimer <= 0) {
+            school.scanTimer = 0.18;
+            let found = false;
+            let bestD2 = 80 * 80;
+            let bestX = 0, bestZ = 0;
+            if (CC.coast.isWater(px, pz) || CC.coast.distanceToWater(px, pz) < 6) {
+              const dx = px - school.center.x, dz = pz - school.center.z;
+              const d2 = dx * dx + dz * dz;
+              if (d2 < bestD2) { bestD2 = d2; bestX = px; bestZ = pz; found = true; }
+            }
+            if (npcs) {
+              const list = npcs.pedestrians || npcs;
+              for (let j = 0; j < list.length; j++) {
+                const p = list[j];
+                const pos = p.position || p.pos;
+                if (!pos) continue;
+                const dx = pos.x - school.center.x, dz = pos.z - school.center.z;
+                const d2 = dx * dx + dz * dz;
+                // Cheap reject first; most NPCs are nowhere near the school.
+                if (d2 >= bestD2) continue;
+                if (!CC.coast.isWater(pos.x, pos.z) &&
+                    CC.coast.distanceToWater(pos.x, pos.z) > 4) continue;
+                bestD2 = d2; bestX = pos.x; bestZ = pos.z; found = true;
+              }
+            }
+            school.hasLiveTarget = found;
+            if (found) {
+              school.target.set(bestX, 0, bestZ);
+              school.timer = 2;
             }
           }
-          if (target) {
-            school.target.set(target.x, 0, target.z);
-            school.timer = 2;
-          } else {
+          if (!school.hasLiveTarget) {
             school.timer -= dt;
-            if (school.timer <= 0 || Math.hypot(school.target.x - school.center.x, school.target.z - school.center.z) < 2.5) {
+            if (school.timer <= 0 ||
+                Math.hypot(school.target.x - school.center.x,
+                  school.target.z - school.center.z) < 2.5) {
               pickSchoolTarget(school, rng);
             }
           }

@@ -139,6 +139,8 @@ html, body {
 .vehBtn:active { transform: translateY(1px); }
 .vehBtn.active { background: rgba(255, 209, 102, 0.22); border-color: #ffd166; }
 .vehBtn.active b { color: #ffd166; }
+.skinHead { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 8px; }
+.skinList { grid-template-columns: repeat(3, 1fr); }
 .smallRow {
   display: flex;
   justify-content: space-between;
@@ -282,6 +284,43 @@ html, body {
   white-space: nowrap;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* station name card shown when the boombox is used */
+.stationBanner {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  z-index: 20;
+  transform: translate(-50%, -10px) scale(0.96);
+  padding: 9px 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(98, 224, 255, 0.6);
+  background: rgba(8, 18, 24, 0.94);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+  color: #eafaff;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.22s;
+}
+.stationBanner.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.stationBannerTitle {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffe9b0;
+}
+.stationBannerDetail {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9fe6ff;
+}
 
 /* police status and big outcome cards */
 .wantedBadge {
@@ -741,7 +780,8 @@ html, body {
 }
 .padStatus {
   position: absolute;
-  bottom: 52px;
+  /* Sits above the compact HUD icon tooltips instead of under the new buttons. */
+  bottom: 88px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 10px;
@@ -961,36 +1001,110 @@ html, body {
 
 
 
-/* audio + world HUD */
+/* centered quick-control icon dock */
 .audioBar {
   position: absolute;
-  bottom: 24px;
-  right: 18px;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  gap: 6px;
-  pointer-events: auto;
-}
-.musicBtn {
-  pointer-events: auto;
-  appearance: none;
-  border: 1px solid rgba(255, 209, 102, 0.4);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 5px 8px;
   border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  font-weight: 700;
-  color: #ffe9b0;
-  background: rgba(10, 26, 34, 0.62);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  background: rgba(10, 26, 34, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: auto;
+  z-index: 11;
 }
-.musicBtn:hover:not(:disabled) { background: rgba(255, 209, 102, 0.18); }
-.musicBtn.off { color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.16); }
-.musicBtn.file { color: #9dffc2; border-color: rgba(157, 255, 194, 0.5); }
+.iconBtn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  appearance: none;
+  border: 1px solid rgba(255, 209, 102, 0.42);
+  border-radius: 50%;
+  color: #ffe9b0;
+  background: rgba(10, 26, 34, 0.88);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.iconBtn:hover, .iconBtn.active {
+  background: rgba(255, 209, 102, 0.2);
+  border-color: rgba(255, 209, 102, 0.8);
+  transform: translateY(-1px);
+}
+.iconBtn.off { color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.18); }
+.musicGlyph { font-size: 23px; line-height: 1; font-weight: 700; }
+.iconSprite { width: 23px; height: 23px; object-fit: contain; }
+.settingsSprite { filter: invert(1); mix-blend-mode: screen; }
+.iconBtn::after {
+  content: attr(data-label);
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  z-index: 30;
+  transform: translateX(-50%) translateY(4px);
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 209, 102, 0.5);
+  background: rgba(8, 18, 24, 0.96);
+  color: #ffe9b0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s, transform 0.14s;
+}
+.iconBtn:hover::after, .iconBtn:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.volumePopup {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 25;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 54px;
+  padding: 9px 6px 7px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 209, 102, 0.5);
+  background: rgba(8, 18, 24, 0.96);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.volumePopupLabel, .volumePopupValue {
+  color: #9fe6ff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.volumePopupValue { color: #ffe9b0; font-variant-numeric: tabular-nums; }
+.volumePopup input[type="range"] {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  appearance: slider-vertical;
+  width: 20px;
+  height: 92px;
+  margin: 0;
+  accent-color: #62e0ff;
+  cursor: pointer;
+}
 .worldStatus {
   position: absolute;
-  bottom: 28px;
+  bottom: 116px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 11px;
@@ -1064,7 +1178,9 @@ html, body {
   #minimapWrap { transform: scale(0.78); transform-origin: bottom right; }
   #help { width: 92vw; }
   #settings { width: 92vw; }
-  .audioBar { right: 10px; bottom: 10px; gap: 4px; }
-  .musicBtn { padding: 5px 8px; font-size: 9px; }
-  .worldStatus { bottom: 52px; }
+  .audioBar { bottom: 10px; gap: 5px; padding: 4px 6px; }
+  .iconBtn { width: 32px; height: 32px; }
+  .iconSprite { width: 20px; height: 20px; }
+  .worldStatus { bottom: 116px; }
+  .padStatus { bottom: 88px; }
 }

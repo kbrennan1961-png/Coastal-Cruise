@@ -1263,11 +1263,13 @@
     },
     fpv: {
       key: '0', label: 'FPV Kamikaze Quad', flying: true, hover: true, fpv: true,
-      maxSpeed: 34, accel: 15, brake: 12, turn: 2.2, climb: 11,
-      minAltitude: 0.8, defaultAltitude: 6, ceiling: 560, batterySeconds: 900,
+      // Matches the jetpack's handling so W/S, A/D, Q/Z and Shift/Space feel
+      // identical; only the battery and kamikaze payload are unique.
+      maxSpeed: 28, accel: 18, brake: 14, turn: 3.1, climb: 16,
+      minAltitude: 0.8, defaultAltitude: 2.2, ceiling: 520, batterySeconds: 900,
       radius: 1.1, wheelRadius: 0, lean: 0,
       audio: { wave: 'sawtooth', base: 118, mult: 5.2, gain: 0.045, filter: 2100 },
-      color: 0x22272b, desc: 'Goggles view — hunt Shahed drones over the harbor'
+      color: 0x22272b, desc: 'Jetpack controls — launches where you stand and rams aircraft'
     },
     jetpack: {
       key: 'J', label: 'Jetpack', flying: true, hover: true, jetpack: true,

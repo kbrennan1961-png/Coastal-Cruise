@@ -1,16 +1,17 @@
 # Coastal Cruise media guide
 
-All media is optional and stays local. The game still works by double-clicking
-`index.html` from `file://`; nothing is downloaded at runtime except the single
-Three.js CDN script already used by the page.
+The published build works by double-clicking `index.html` from `file://`.
+Three.js and GLTFLoader are vendored under `js/vendor`, and the bundled radio
+MP3s stay local; nothing is fetched from a server or CDN at runtime.
 
 ## Radio audio files
 
 Put files in the `audio/` folder. `js/radiodata.js` already points every station
-at these names; add a file, reload, and that station uses it. Missing or
-unplayable files fall back to a distinct built-in synthesized style.
+at these names; replace a file, reload, and that station uses it. Missing or
+unplayable files leave that station silent because the old synthesized fallback
+is intentionally muted.
 
-| Station | File to add | Built-in fallback |
+| Station | Bundled file | Musical style |
 |---|---|---|
 | COASTAL FM | `audio/coastal-fm.mp3` | chill |
 | CRUISE 101 | `audio/cruise-101.mp3` | cruise |
@@ -23,8 +24,9 @@ unplayable files fall back to a distinct built-in synthesized style.
 | SPORTS REEL | `audio/sports-reel.mp3` | sports bed |
 | DRIVE-IN OLDIES | `audio/drive-in-oldies.mp3` | oldies |
 
-`.ogg` and `.wav` alternatives are also listed in `js/radiodata.js`; the game
-tries the listed formats in order.
+The published build lists MP3 files only, so no missing-format requests are
+made at runtime. To add `.ogg`/`.wav` alternatives, append them to a station's
+`files` array in `js/radiodata.js`; files are tried in order.
 
 ### Recommended compression
 

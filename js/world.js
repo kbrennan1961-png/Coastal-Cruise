@@ -21,6 +21,7 @@
 
   const rng = CC.rng(20261119);
   const tmpMat = {};
+  const boxGeoCache = Object.create(null);
 
   // Tree, shrub, palm and rock placement tests run tens of thousands of times
   // at startup. Build the reserved-zone list once instead of concatenating a
@@ -44,7 +45,11 @@
     return tmpMat[key];
   }
   function box(w, h, d, material, x, y, z) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    // StaticBatcher only reads source geometries, so identical props can share
+    // one BufferGeometry instead of allocating thousands at world build time.
+    const key = w + '|' + h + '|' + d;
+    const geo = boxGeoCache[key] || (boxGeoCache[key] = new THREE.BoxGeometry(w, h, d));
+    const m = new THREE.Mesh(geo, material);
     m.position.set(x || 0, y || 0, z || 0);
     m.castShadow = true; m.receiveShadow = true;
     return m;
@@ -1166,6 +1171,12 @@
         this.geo.attributes.aLife.needsUpdate = true;
       },
       update(dt) {
+        // Idle particles are the common case. Skip the full 1800-slot scan and
+        // both GPU buffer uploads when nothing is alive.
+        if (this.alive === 0) {
+          this.points.visible = false;
+          return;
+        }
         this.points.visible = true;
         let alive = 0;
         for (let i = 0; i < this.MAX; i++) {
@@ -1184,6 +1195,7 @@
           this.vel[i * 3 + 2] *= 1 - dt * 0.7;
         }
         this.alive = alive;
+        if (alive === 0) this.points.visible = false;
         this.geo.attributes.position.needsUpdate = true;
         this.geo.attributes.aLife.needsUpdate = true;
       }

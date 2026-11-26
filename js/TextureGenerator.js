@@ -509,7 +509,11 @@
     },
 
     setNight(value) {
-      nightAmount = U.clamp(value || 0, 0, 1);
+      const next = U.clamp(value || 0, 0, 1);
+      // Lighting.update() calls this every frame; skip the full material sweep
+      // while daylight is steady or the night level has not visibly moved.
+      if (Math.abs(next - nightAmount) < 0.005) return nightAmount;
+      nightAmount = next;
       facadeMaterials.forEach(function (m) { m.emissiveIntensity = nightAmount * 1.45; });
       return nightAmount;
     },

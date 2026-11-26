@@ -7,6 +7,9 @@
 
   /* ---------- audio: engine, weather, procedural + file-backed radio ---------- */
   const VOLUME_KEY = 'cc.audio.volumes';
+  // Bundled MP3s are the only in-game radio. The old WebAudio chiptune fallback
+  // stays in the file for reference but is never allowed to make sound.
+  const SYNTH_RADIO_ENABLED = false;
   function storedVolumes() {
     try {
       const value = JSON.parse(localStorage.getItem(VOLUME_KEY) || 'null');
@@ -25,7 +28,7 @@
     { name: 'MOONLIGHT', files: [], fallback: 'night' }
   ]);
 
-  // Each station has a distinct synth style when no audio file is available.
+  // Legacy synth styles; ignored while SYNTH_RADIO_ENABLED is false.
   const MUSIC_STYLES = {
     chill: {
       chords: [[48, 52, 55, 59, 64, 67], [45, 48, 52, 55, 60, 64],
@@ -103,7 +106,7 @@
     ready: false,
     volumes: Object.assign({ master: 0.85, music: 0.7, sfx: 0.85 }, storedVolumes()),
     radio: {
-      index: 0, audio: null, source: 'procedural', token: 0,
+      index: 0, audio: null, source: 'silent', token: 0,
       suspendedForPedestrian: false
     },
     musicOn: false,
@@ -223,7 +226,7 @@
     setMusicVolume(value) {
       this.volumes.music = U.clamp(Number(value) || 0, 0, 1);
       this.applyRadioVolume();
-      if (this.ready && this.musicOn && this.radio.source === 'procedural') {
+      if (SYNTH_RADIO_ENABLED && this.ready && this.musicOn && this.radio.source === 'procedural') {
         this.musicGain.gain.setTargetAtTime(0.42 * this.volumes.music, this.ctx.currentTime, 0.08);
       }
       this.saveVolumes();
@@ -428,19 +431,22 @@
     radioStatic(duration) {
       if (!this.ready || !this.noiseBuffer) return;
       const ctx = this.ctx, now = ctx.currentTime;
-      const dur = Math.max(0.15, Number(duration) || 0.45);
+      // Short tuning burst on station changes only. It rides the music volume,
+      // not the SFX bus, so lowering effects cannot erase the radio handoff.
+      const dur = Math.max(0.18, Number(duration) || 0.34);
       const src = ctx.createBufferSource();
       src.buffer = this.noiseBuffer; src.loop = true;
       const band = ctx.createBiquadFilter();
-      band.type = 'bandpass'; band.frequency.value = 2200; band.Q.value = 0.7;
+      band.type = 'bandpass'; band.frequency.value = 1900; band.Q.value = 0.6;
       const high = ctx.createBiquadFilter();
-      high.type = 'highpass'; high.frequency.value = 500;
+      high.type = 'highpass'; high.frequency.value = 450;
       const g = ctx.createGain();
+      const level = 0.1 * (this.volumes.music || 1);
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.045 * (this.volumes.music || 1), now + 0.03);
-      g.gain.setValueAtTime(0.035 * (this.volumes.music || 1), now + dur * 0.55);
+      g.gain.exponentialRampToValueAtTime(level, now + 0.025);
+      g.gain.setValueAtTime(level * 0.72, now + dur * 0.55);
       g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-      src.connect(high); high.connect(band); band.connect(g); g.connect(this.sfxGain);
+      src.connect(high); high.connect(band); band.connect(g); g.connect(this.master);
       src.start(now); src.stop(now + dur + 0.05);
     },
 
@@ -470,19 +476,14 @@
       if (this.ready) this.musicGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12);
     },
     startProcedural() {
-      this.init();
-      if (!this.ready || !this.radioAllowed()) return;
+      // Silent compatibility shim: gameplay radio comes only from audio files.
+      this.pauseProcedural();
       this.stopRadioAudio(false);
-      this.radio.source = 'procedural';
-      this.musicStep = 0;
-      this.musicNext = this.ctx.currentTime + 0.12;
-      if (!this.musicTimer) this.musicTimer = window.setInterval(() => this.scheduleMusic(), 140);
-      this.musicGain.gain.setTargetAtTime(0.42 * this.volumes.music, this.ctx.currentTime, 0.35);
-      this.scheduleMusic();
+      this.radio.source = 'silent';
       updateAudioUI();
     },
     note(freq, when, dur, vol, type) {
-      if (!this.radioAllowed()) return;
+      if (!SYNTH_RADIO_ENABLED || !this.radioAllowed()) return;
       const o = this.ctx.createOscillator();
       const g = this.ctx.createGain();
       o.type = type || 'sine';
@@ -494,8 +495,8 @@
       o.start(when); o.stop(when + dur + 0.05);
     },
     scheduleMusic() {
-      if (!this.ready || !this.musicOn || !this.radioAllowed() ||
-          this.radio.source !== 'procedural') return;
+      if (!SYNTH_RADIO_ENABLED || !this.ready || !this.musicOn ||
+          !this.radioAllowed() || this.radio.source !== 'procedural') return;
       const style = this.currentStyle();
       const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
       while (this.musicNext < this.ctx.currentTime + 0.35) {
@@ -571,11 +572,14 @@
       this.pauseProcedural();
       this.stopRadioAudio(false);
 
-      const fallback = (reason) => {
+      const fallback = () => {
         if (token !== this.radio.token || !this.musicOn || !this.radioAllowed()) return;
-        this.radio.source = 'procedural';
-        this.startProcedural();
-        toast(station.name + (reason ? ' — ' + reason : '') + ' (synth station)', 2.4);
+        this.stopRadioAudio(false);
+        this.pauseProcedural();
+        this.radio.source = 'silent';
+        if (announce) showStationBanner(station.name, 'audio unavailable');
+        else toast(station.name + ' — audio unavailable', 2.4);
+        updateAudioUI();
       };
 
       if (!station.files || !station.files.length) { fallback(); return; }
@@ -590,7 +594,8 @@
           });
           this.radio.audio = el;
           this.radio.source = 'file';
-          toast(station.name + (announce ? ' — now playing' : ''), 2.2);
+          if (announce) showStationBanner(station.name, 'now playing');
+          else toast(station.name, 2.2);
           updateAudioUI();
         }).catch(() => fallback('audio blocked'));
       }).catch(() => fallback());
@@ -608,7 +613,10 @@
       }
       const station = this.station();
       if (station.files && station.files.length) this.tryRadioStation(this.radio.index, false);
-      else this.startProcedural();
+      else {
+        this.pauseProcedural();
+        this.radio.source = 'silent';
+      }
       updateAudioUI();
     },
     stopMusic() {
@@ -624,13 +632,18 @@
       if (!RADIO_DEFS.length) return;
       const next = ((index % RADIO_DEFS.length) + RADIO_DEFS.length) % RADIO_DEFS.length;
       this.radio.index = next;
+      const announced = announce !== false;
+      if (announced) {
+        showStationBanner(RADIO_DEFS[next].name,
+          this.musicOn ? 'now playing' : 'selected · press N to play');
+      }
       if (this.musicOn) {
-        this.radioStatic(0.45);
+        this.radioStatic(0.32);
         this.tryRadioStation(next, announce !== false);
       } else {
         this.pauseProcedural();
         this.stopRadioAudio();
-        toast(RADIO_DEFS[next].name + ' selected — press N to play', 2.2);
+        if (!announced) toast(RADIO_DEFS[next].name + ' selected — press N to play', 2.2);
         updateAudioUI();
       }
     },
@@ -645,6 +658,7 @@
     vehicles: {},
     activeKey: 'coupe',
     lastVehicle: 'pedestrian',
+    pedSkin: 'default',
     started: false,
     bootMessage: '',
     freeRoam: false,
@@ -658,6 +672,9 @@
     lookMaxYaw: 1.65,
     lookMaxPitch: 0.78,
     fpvActive: false,
+    // Launch point captured from the pedestrian/car when FPV is chosen. The
+    // pilot stays there; the quad and its respawn always return to this spot.
+    fpvPilot: null,
     ride: null,
     rideStats: { boardings: 0, revenue: 0, coaster: 0, ferris: 0, carousel: 0 },
     fpvMessageTimer: 0,
@@ -678,6 +695,9 @@
     safeHouse: null,
     mapOpen: false,
     mapCursor: null,
+    mapDirty: true,
+    mapDrawTimer: 0,
+    mapRenderTimer: 0,
     mapZoom: 1,
     mapPanX: 0,
     mapPanZ: 0,
@@ -693,7 +713,11 @@
 
   function $(id) { return document.getElementById(id); }
 
+  // HUD text runs at 5-10 Hz; avoid style/layout invalidation when unchanged.
+  const hudTextCache = Object.create(null);
   function setText(id, value) {
+    if (hudTextCache[id] === value) return;
+    hudTextCache[id] = value;
     const el = $(id);
     if (el) el.textContent = value;
   }
@@ -705,6 +729,35 @@
     el.classList.add('show');
     Game.toastTimer = duration || 2.6;
   }
+
+  // Dedicated center-top card for radio station changes. It replaces the
+  // generic toast when the boombox or a station hotkey is used, and clears any
+  // toast already on screen so the station name reads cleanly.
+  function showStationBanner(name, detail) {
+    const el = $('stationBanner');
+    if (!el) return;
+    const toastEl = $('toast');
+    if (toastEl) toastEl.classList.remove('show');
+    el.textContent = '';
+    const title = document.createElement('span');
+    title.className = 'stationBannerTitle';
+    title.textContent = name;
+    el.appendChild(title);
+    if (detail) {
+      const sub = document.createElement('span');
+      sub.className = 'stationBannerDetail';
+      sub.textContent = detail;
+      el.appendChild(sub);
+    }
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    window.clearTimeout(Game.stationBannerTimer);
+    Game.stationBannerTimer = window.setTimeout(function () {
+      el.classList.remove('show');
+    }, 2300);
+  }
+  Game.showStationBanner = showStationBanner;
 
   // Vehicle specs keep descriptive asset notes for menus, but the short
   // selection toast should read "Name — useful description", not repeat the
@@ -760,10 +813,15 @@
     const overlay = $('fpvOverlay');
     if (hud) hud.classList.toggle('fpvActive', Game.fpvActive);
     if (overlay) overlay.classList.toggle('hidden', !Game.fpvActive);
-    if (drone && drone.isFpv && drone.state === 'ready') {
-      // Hide the airframe in goggles so it cannot block the camera. The parked
-      // pad model reappears through showAirportDisplays() when leaving.
-      drone.setVisible(!Game.fpvActive);
+    if (drone && drone.isFpv) {
+      if (Game.fpvActive) {
+        // The quad is visible for a fraction of a second after launch, then
+        // FpvDrone.endSpawnFlash() hides it so it cannot block the camera.
+        if (!drone.spawnFlash) drone.setVisible(false);
+      } else {
+        drone.spawnFlash = 0;
+        drone.setVisible(false);
+      }
     }
     if (!Game.fpvActive) {
       const msg = $('fpvMessage');
@@ -772,23 +830,24 @@
     }
   }
 
-  function fpvSpawn() {
-    const list = (CC.aircraftSpawns || []).filter(function (s) { return s.key === 'fpv'; });
-    return list.length ? list[0] : CC.aircraftSpawn('fpv', 0);
-  }
-
+  // Leaving the goggles puts the player back in whatever they were driving or
+  // walking when FPV was chosen, at the exact same coordinates.
   function exitFpv() {
     if (!Game.fpvActive) return;
     const drone = Game.vehicles.fpv;
-    const spawn = fpvSpawn();
-    const pose = {
-      x: (spawn ? spawn.x : (drone ? drone.home.x : 0)) + 5,
-      z: spawn ? spawn.z : (drone ? drone.home.z : 0),
-      h: spawn ? spawn.heading : 0,
-      s: 0
-    };
-    selectVehicle('pedestrian', pose);
-    toast('FPV goggles off — airframe back on the pad', 2.2);
+    if (drone) {
+      drone.spawnFlash = 0;
+      drone.setVisible(false);
+    }
+    const pilot = Game.fpvPilot;
+    const key = pilot && Game.vehicles[pilot.key] ? pilot.key : 'pedestrian';
+    const pose = pilot
+      ? { x: pilot.x, z: pilot.z, h: pilot.h, s: 0, altitude: pilot.altitude }
+      : null;
+    const changed = selectVehicle(key, pose || undefined);
+    if (!changed) setFpvMode(false, null);
+    Game.fpvPilot = null;
+    toast('FPV goggles off — back at the pilot', 2.2);
   }
 
   function setFreeRoam(on) {
@@ -949,10 +1008,10 @@
     stopIntroMusic();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     Audio.init();
-    // Start with Playback FM playing when spawning in a vehicle.
+    // Start with Cruise 101 playing when spawning in a vehicle.
     Audio.stopMusic();
-    const playbackIdx = (CC.radioStationDefs || []).findIndex(function (s) { return /playback/i.test(s.name); });
-    if (playbackIdx >= 0) Audio.radio.index = playbackIdx;
+    const cruiseIdx = (CC.radioStationDefs || []).findIndex(function (s) { return /cruise 101/i.test(s.name); });
+    if (cruiseIdx >= 0) Audio.radio.index = cruiseIdx;
     if (Audio.radioAllowed()) Audio.startMusic();
     updateAudioUI();
     updateWorldUI();
@@ -1197,22 +1256,30 @@
 
   function updateMusicButton() {
     const btn = $('musicBtn');
-    if (!btn) return;
-    const on = !!(Audio && Audio.musicOn);
-    btn.textContent = on ? '♪ MUSIC: ON' : '♪ MUSIC: OFF';
-    btn.classList.toggle('off', !on);
+    if (!btn || !Audio) return;
+    const pct = Math.round((Audio.volumes.music || 0) * 100);
+    btn.classList.toggle('off', pct <= 0 || !Audio.musicOn);
+    const label = 'Music volume · ' + pct + '%';
+    btn.dataset.label = label;
+    btn.setAttribute('aria-label', label);
   }
 
   function updateRadioButton() {
     if (!Audio) return;
     const onFoot = !Audio.radioAllowed();
-    ['radioBtn', 'stationBtn'].forEach(function (id) {
-      const btn = $(id);
-      if (!btn) return;
-      btn.textContent = '📻 ' + Audio.stationName() + (onFoot ? ' · ON FOOT' : '');
-      btn.classList.toggle('file', !onFoot && Audio.radio.source === 'file');
-      btn.classList.toggle('off', onFoot);
-    });
+    const stationBtn = $('stationBtn');
+    if (stationBtn) {
+      stationBtn.textContent = '📻 ' + Audio.stationName() + (onFoot ? ' · ON FOOT' : '');
+      stationBtn.classList.toggle('file', !onFoot && Audio.radio.source === 'file');
+      stationBtn.classList.toggle('off', onFoot);
+    }
+    const boombox = $('radioBtn');
+    if (boombox) {
+      const label = 'Next station · ' + Audio.stationName() + (onFoot ? ' · on foot' : '');
+      boombox.dataset.label = label;
+      boombox.setAttribute('aria-label', label);
+      boombox.classList.toggle('off', onFoot);
+    }
   }
 
   /* ---------- full-screen display option ---------- */
@@ -1270,6 +1337,11 @@
       if (slider && document.activeElement !== slider) slider.value = pct;
       if (label) label.textContent = pct + '%';
     });
+    const musicPct = Math.round((Audio.volumes.music || 0) * 100);
+    const quick = $('quickMusicVol'), quickVal = $('quickMusicVal');
+    if (quick && document.activeElement !== quick) quick.value = musicPct;
+    if (quickVal) quickVal.textContent = String(musicPct);
+    updateMusicButton();
     const loadVol = loadingVolume();
     ['loadingAudio', 'loadingVideo'].forEach(function (id) {
       const el = $(id);
@@ -1294,16 +1366,16 @@
     if (!w) return;
     const clock = clockText(w.timeOfDay);
     const icon = w.night > 0.45 ? '☾' : w.rain > 0.35 ? '☂' : '☀';
-    const el = $('worldStatus');
-    if (el) el.textContent = icon + ' ' + clock + ' • ' + w.weather.toUpperCase();
-    const weatherBtn = $('weatherBtn');
-    if (weatherBtn) weatherBtn.textContent = w.weather.toUpperCase();
+    const weatherName = w.weather.toUpperCase();
+    setText('worldStatus', icon + ' ' + clock + ' • ' + weatherName);
+    setText('weatherBtn', weatherName);
 
     const timeSlider = $('timeSlider');
     const pct = Math.round(w.timeOfDay * 100);
-    if (timeSlider && document.activeElement !== timeSlider) timeSlider.value = pct;
-    const timeVal = $('timeVal');
-    if (timeVal) timeVal.textContent = clock;
+    if (timeSlider && document.activeElement !== timeSlider && Number(timeSlider.value) !== pct) {
+      timeSlider.value = pct;
+    }
+    setText('timeVal', clock);
   }
 
   function updateWantedHud() {
@@ -1469,7 +1541,7 @@
     window.addEventListener('keyup', function (e) { Game.keys[e.key.toLowerCase()] = false; });
     window.addEventListener('pointerdown', function () { Audio.init(); });
     window.addEventListener('blur', function () { Game.keys = {}; });
-    document.querySelectorAll('.vehBtn').forEach(function (btn) {
+    document.querySelectorAll('.vehBtn:not(.skinBtn)').forEach(function (btn) {
       btn.addEventListener('click', function () {
         Audio.init();
         if (btn.dataset.key !== Game.activeKey) selectVehicle(btn.dataset.key);
@@ -1478,20 +1550,71 @@
         btn.blur();
       });
     });
+    document.querySelectorAll('.skinBtn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        Audio.init();
+        if (Game.activeKey !== 'pedestrian' && !selectVehicle('pedestrian')) return;
+        setPedestrianSkin(btn.dataset.skin);
+        const panel = $('vehiclePanel');
+        if (panel) panel.classList.add('hidden');
+        btn.blur();
+      });
+    });
+    function closeVolumePopup() {
+      const pop = $('volumePopup'), btn = $('musicBtn');
+      if (pop) pop.classList.add('hidden');
+      if (btn) {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    }
+
     const startBtn = $('startBtn');
     if (startBtn) startBtn.addEventListener('click', function () { startOrSkip(); });
     const musicBtn = $('musicBtn');
-    if (musicBtn) musicBtn.addEventListener('click', function () { Audio.init(); Audio.toggleMusic(); musicBtn.blur(); });
+    if (musicBtn) musicBtn.addEventListener('click', function () {
+      Audio.init();
+      const pop = $('volumePopup');
+      if (pop) {
+        const open = !pop.classList.toggle('hidden');
+        musicBtn.classList.toggle('active', open);
+        musicBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) {
+          const quick = $('quickMusicVol');
+          if (quick) quick.value = Math.round((Audio.volumes.music || 0) * 100);
+          updateVolumeUI();
+        }
+      }
+      musicBtn.blur();
+    });
+    const quickMusicVol = $('quickMusicVol');
+    if (quickMusicVol) {
+      quickMusicVol.addEventListener('input', function () {
+        Audio.init();
+        Audio.setMusicVolume(Number(quickMusicVol.value) / 100);
+      });
+      quickMusicVol.addEventListener('change', function () { quickMusicVol.blur(); });
+    }
     const radioBtn = $('radioBtn');
-    if (radioBtn) radioBtn.addEventListener('click', function () { Audio.init(); Audio.cycleStation(1); radioBtn.blur(); });
+    if (radioBtn) radioBtn.addEventListener('click', function () {
+      Audio.init();
+      closeVolumePopup();
+      Audio.cycleStation(1);
+      radioBtn.blur();
+    });
     const vehiclesBtn = $('vehiclesBtn');
     if (vehiclesBtn) vehiclesBtn.addEventListener('click', function () {
+      closeVolumePopup();
       const panel = $('vehiclePanel');
       if (panel) panel.classList.toggle('hidden');
       vehiclesBtn.blur();
     });
     const settingsBtn = $('settingsBtn');
-    if (settingsBtn) settingsBtn.addEventListener('click', function () { toggleSettings(); settingsBtn.blur(); });
+    if (settingsBtn) settingsBtn.addEventListener('click', function () {
+      closeVolumePopup();
+      toggleSettings();
+      settingsBtn.blur();
+    });
     const settingsClose = $('settingsClose');
     if (settingsClose) settingsClose.addEventListener('click', function () { toggleSettings(false); });
     const menuBtn = $('menuBtn');
@@ -1532,12 +1655,15 @@
   }
 
   function readInput(pad, v) {
-    const neutral = {
-      throttle: 0, steer: 0, yaw: 0, lift: 0, pitch: 0, roll: 0,
-      handbrake: false, boost: false, dive: false, climb: false, descend: false,
-      fpvPitch: 0, fpvRoll: 0, fpvYaw: 0
-    };
-    if (!Game.started) return neutral;
+    if (!Game.started) {
+      // Only the pre-start splash needs this object; do not allocate it on
+      // every gameplay frame.
+      return {
+        throttle: 0, steer: 0, yaw: 0, lift: 0, pitch: 0, roll: 0,
+        handbrake: false, boost: false, dive: false, climb: false, descend: false,
+        fpvPitch: 0, fpvRoll: 0, fpvYaw: 0
+      };
+    }
     const k = Game.keys;
     const p = pad || {};
     const isAircraft = !!(v && v.isAircraft);
@@ -1565,7 +1691,9 @@
       // The keyboard mirrors that with W/S, A/D, Q/Z and Shift/Space.
       pitch = keyThrottle + padPitch;
       roll = keySteer + padRoll;
-      if (v && v.spec && v.spec.jetpack) roll = -roll;
+      // FPV and jetpack share the same left/right mapping: A/D strafe in the
+      // direction the player expects instead of the drone's old inverted acro roll.
+      if (v && v.spec && (v.spec.jetpack || v.spec.fpv)) roll = -roll;
       throttle = p.throttle || 0;
       steer = 0;
     } else if (isAircraft) {
@@ -1690,23 +1818,25 @@
     const old = Game.vehicles[Game.activeKey];
     const next = Game.vehicles[key];
     if (!next) return false;
-    if (key === 'fpv' && Game.activeKey !== 'fpv' && !aircraftSpawn) {
-      const pad = fpvSpawn();
-      const dist = pad && old && old.pos
-        ? U.distance2D(old.pos.x, old.pos.z, pad.x, pad.z) : Infinity;
-      if (!pad || dist > 12) {
-        if (pad && isFinite(dist) && Game.setWaypoint) {
-          Game.setWaypoint(pad.x, pad.z);
-          toast('FPV pad waypoint set — ' + Math.round(dist) + ' m to the launch pad', 3.4);
-        } else {
-          toast('FPV quad is on the airport pad — walk over to launch', 2.6);
-        }
-        return false;
-      }
-    }
     let pose = { x: old.pos.x, z: old.pos.z, h: old.heading, s: old.speed * 0.7 };
     let usedSpawn = null;
-    if (poseOverride) {
+    let fpvLaunch = null;
+    // FPV launches from the on-foot pedestrian or car the player is using.
+    // The pilot stays behind at these coordinates; the airport pad is unused.
+    if (key === 'fpv' && old !== next && !aircraftSpawn) {
+      const ground = CC.heightAt(old.pos.x, old.pos.z);
+      const altitude = old.isAircraft
+        ? Math.max(next.spec.minAltitude || 0.8, old.pos.y - ground)
+        : (next.spec.defaultAltitude || 2.2);
+      fpvLaunch = {
+        key: old.key, x: old.pos.x, z: old.pos.z, h: old.heading,
+        s: old.speed * 0.7, altitude: altitude,
+        aircraftSpawn: Game.activeAircraftSpawn || null
+      };
+      if (next.claimPilotPose) next.claimPilotPose(fpvLaunch.x, fpvLaunch.z, fpvLaunch.h, altitude);
+      else next.setPose(fpvLaunch.x, fpvLaunch.z, fpvLaunch.h, 0, altitude);
+      pose = { x: fpvLaunch.x, z: fpvLaunch.z, h: fpvLaunch.h, s: 0, altitude: altitude };
+    } else if (poseOverride) {
       pose = poseOverride;
     } else if (old.isAircraft && key === 'pedestrian') {
       // Stepping out of an aircraft in flight returns you to its airport spot;
@@ -1753,7 +1883,9 @@
       CC.NPCSystem.releaseStolenCar({ x: old.pos.x, z: old.pos.z, h: old.heading });
       Game.activeStolenCar = null;
     }
-    old.setVisible(false);
+    // The pilot vehicle/pedestrian remains visible at the launch point; FPV is
+    // a remote drone, not a body swap into the quad.
+    if (!fpvLaunch) old.setVisible(false);
     Game.resetCameraLook();
     if (next.isAircraft && pose.altitude != null) {
       next.setPose(pose.x, pose.z, pose.h, pose.s, pose.altitude);
@@ -1768,10 +1900,17 @@
     Game.activeAircraftSpawn = next.isAircraft ? usedSpawn : null;
     showAirportDisplays(Game.activeAircraftSpawn);
     if (next.isFpv && old !== next) {
+      Game.fpvPilot = fpvLaunch || Game.fpvPilot;
       next.newSortie();
+      next.beginSpawnFlash();
       setFpvMode(true, next);
-      Game.fpvMessage('SORTIE ' + next.sortie + ' — ' + next.name, 2.8);
+      Game.fpvMessage('FPV LAUNCHED FROM PILOT — ' + next.name, 2.8);
     } else {
+      if (old && old.isFpv) {
+        old.spawnFlash = 0;
+        old.setVisible(false);
+      }
+      if (!fpvLaunch) Game.fpvPilot = null;
       setFpvMode(false, null);
     }
     // Keep the last *land* vehicle remembered so E returns to it after a trip.
@@ -1810,6 +1949,7 @@
   };
 
   Game.selectVehicle = selectVehicle;
+  Game.setPedestrianSkin = setPedestrianSkin;
   Game.exitFpv = exitFpv;
 
   Game.horn = function () {
@@ -1817,7 +1957,10 @@
     Audio.init();
     const v = Game.vehicles[Game.activeKey];
     if (!v) return;
-    if (v.isPedestrian && CC.CrimeSystem && CC.CrimeSystem.attack(v.pos)) return;
+    if (v.isPedestrian) {
+      if (v.downloaded && v.downloaded.trigger) v.downloaded.trigger('Attack');
+      if (CC.CrimeSystem && CC.CrimeSystem.attack(v.pos)) return;
+    }
     Audio.honk(1);
     if (v.isPedestrian || v.isAircraft || (v.spec && v.spec.water)) return;
     if (Game.privateMoment) return;
@@ -1866,8 +2009,27 @@
     const v = Game.vehicles[Game.activeKey];
     $('vehicleName').textContent = v.spec.label;
     $('vehicleDesc').textContent = v.spec.desc;
-    document.querySelectorAll('.vehBtn').forEach(function (b) {
+    document.querySelectorAll('.vehBtn:not(.skinBtn)').forEach(function (b) {
       b.classList.toggle('active', b.dataset.key === Game.activeKey);
+    });
+    document.querySelectorAll('.skinBtn').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.skin === (Game.pedSkin || 'default'));
+    });
+  }
+
+  // Swapping the on-foot body keeps activeKey === 'pedestrian', so every
+  // existing on-foot rule (rescue, safe houses, crimes, swimming) still works.
+  function setPedestrianSkin(key) {
+    const wanted = key && key !== 'default' ? key : 'default';
+    Game.pedSkin = wanted;
+    const ped = Game.vehicles && Game.vehicles.pedestrian;
+    if (!ped || !ped.setSkin) return Promise.resolve(null);
+    return ped.setSkin(wanted).then(function (rig) {
+      updateVehicleHud();
+      if (wanted === 'default') toast('On foot: classic pedestrian', 2);
+      else if (rig) toast('On foot: ' + (CC.DownloadedCharacterLoader.label(wanted) || wanted), 2.2);
+      else toast('That character could not be loaded', 2.4);
+      return rig;
     });
   }
 
@@ -1947,9 +2109,9 @@
       if (key === 'pedestrian') {
         v.setPose(-285, -259, heading, 0);
       } else if (key === 'coupe') {
-        const nr = CC.nearestRoad(-253, 94);
+        const nr = CC.nearestRoad(-106, -35);
         const ch = nr ? Math.atan2(nr.dx, nr.dz) + Math.PI : heading;
-        v.setPose(-253, 94, ch, 0);
+        v.setPose(-106, -35, ch, 0);
       } else if (key === 'boat' && CC.marinaSpawn) {
         v.setPose(CC.marinaSpawn.x, CC.marinaSpawn.z, CC.marinaSpawn.heading, 0);
       } else if (v.isAircraft) {
@@ -1997,21 +2159,26 @@
   const camLook = new THREE.Vector3();
   const camEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-  function updateCamera(dt, v, pad) {
+  function updateCamera(dt, v, pad, snap) {
     const f = v.forward();
     const speed = Math.abs(v.speed);
     const ped = !!v.isPedestrian;
     const flying = !!v.isAircraft;
     if (v.isFpv && Game.activeKey === v.key) {
-      // Goggles: lock the camera to the nose with no follow lag or lookAt
-      // smoothing, so pitch and roll read exactly like an FPV flight controller.
-      Game.camera.position.copy(v.pos);
-      Game.camera.quaternion.setFromEuler(v.cameraEuler(camEuler));
-      // The goggles FOV never changes while FPV is active. Updating the
-      // projection matrix every frame here is pure overhead (and invalidates
-      // the frustum used for culling); only touch it when FOV actually moves.
-      if (Math.abs(Game.camera.fov - 96) > 0.05) {
-        Game.camera.fov = 96;
+      // Forward windshield-style view with the telemetry overlay on top. The
+      // camera sits just ahead of the quad and looks along its heading, with a
+      // little nose pitch but no camera roll; drone roll lives on the HUD ball.
+      const ahead = 0.9;
+      camDesired.set(v.pos.x + f.x * ahead, v.pos.y + 0.28, v.pos.z + f.z * ahead);
+      camLook.set(v.pos.x + f.x * 38,
+        v.pos.y + 0.2 - (v.pitch || 0) * 14,
+        v.pos.z + f.z * 38);
+      Game.camera.position.lerp(camDesired, snap ? 1 : 1 - Math.exp(-14 * dt));
+      Game.camTarget.lerp(camLook, snap ? 1 : 1 - Math.exp(-10 * dt));
+      Game.camera.lookAt(Game.camTarget);
+      const fov = U.clamp(66 + Math.abs(v.speed) * 0.16, 66, 82);
+      if (Math.abs(Game.camera.fov - fov) > 0.05) {
+        Game.camera.fov = fov;
         Game.camera.updateProjectionMatrix();
       }
       return;
@@ -2067,7 +2234,7 @@
       look.set(v.pos.x, v.pos.y + (ped ? 1.3 : 1.2), v.pos.z);
     }
     const camLambda = flying ? (Game.camMode === 1 ? 10 : 4.5) : (Game.camMode === 1 ? 14 : 11);
-    const lerp = 1 - Math.exp(-camLambda * dt);
+    const lerp = snap ? 1 : 1 - Math.exp(-camLambda * dt);
     Game.camera.position.lerp(desired, lerp);
     // Rotate the focus point around the camera, not the vehicle: the stick
     // sweeps the view left/right and tilts it up/down without steering.
@@ -2081,18 +2248,28 @@
       look.z = Game.camera.position.z - dx * s + dz * c;
       look.y = Game.camera.position.y + dy + Game.lookPitch * Math.max(10, horizontal);
     }
-    Game.camTarget.lerp(look, 1 - Math.exp(-8 * dt));
+    Game.camTarget.lerp(look, snap ? 1 : 1 - Math.exp(-8 * dt));
     Game.camera.lookAt(Game.camTarget);
     const fov = flying ? U.clamp(66 + speed * 0.16, 66, 82)
       : ped ? U.clamp(62 + speed * 0.6 + (v.sprinting ? 3 : 0), 62, 76)
         : U.clamp(64 + speed * 0.22, 64, 80);
-    if (Math.abs(Game.camera.fov - fov) > 0.05) {
+    if (snap) {
+      if (Math.abs(Game.camera.fov - fov) > 0.05) Game.camera.fov = fov;
+      Game.camera.updateProjectionMatrix();
+    } else if (Math.abs(Game.camera.fov - fov) > 0.05) {
       Game.camera.fov = U.damp(Game.camera.fov, fov, 4, dt);
       Game.camera.updateProjectionMatrix();
     }
   }
 
   /* ---------- FPV kamikaze collision + interception ---------- */
+  // Every confirmed drone, aircraft or hostile UFO intercepted by an FPV pilot
+  // pays a flat bounty through the same cash HUD used by robberies and deliveries.
+  const FPV_KILL_BONUS = 5000;
+  function fpvPayKill() {
+    if (CC.CrimeSystem && CC.CrimeSystem.addMoney) CC.CrimeSystem.addMoney(FPV_KILL_BONUS);
+  }
+
   function fpvEntityPos(e) {
     if (!e) return null;
     if (e.pos && typeof e.pos.x === 'number') return e.pos;
@@ -2103,8 +2280,13 @@
 
   function fpvEntityRadius(e) {
     if (!e) return 2;
-    if (typeof e.radius === 'number') return e.radius;
     if (e.spec && typeof e.spec.radius === 'number') return e.spec.radius;
+    // NPC aircraft/birds use `radius` for their circular flight path, not
+    // their physical size, so use a compact hit box for those entities.
+    if (e.kind === 'plane') return 5;
+    if (e.kind === 'helicopter' || e.index != null && e.visual) return 4;
+    if (e.kind === 'gull' || e.kind === 'song') return 1.4;
+    if (typeof e.radius === 'number' && e.radius <= 12) return e.radius;
     return 2;
   }
 
@@ -2145,6 +2327,9 @@
     for (let i = 0; i < buildings.length; i++) {
       const b = buildings[i];
       if (!b) continue;
+      // Cheap XZ reject before the segment sweep; buildings can number in the
+      // hundreds and this runs every frame at low altitude.
+      if (Math.abs(b.x - v.pos.x) > 70 || Math.abs(b.z - v.pos.z) > 70) continue;
       const hit = fpvSweep(v, b.x, b.z, Math.max(b.w || 0, b.l || 0) * 0.72 + r);
       if (!hit) continue;
       const y = U.lerp(v.prevPos.y, v.pos.y, hit.t);
@@ -2192,13 +2377,13 @@
     const drones = N.drones || [];
     for (let i = 0; i < drones.length; i++) {
       const d = drones[i];
-      if (!d || d.state === 'crashed' || !d.pos) continue;
+      if (!d || d.disabled || d.state === 'crashed' || !d.pos) continue;
       if (fpvSweepEntity(v, d, 4.2 + (v.radius || 1.1))) return { type: 'shahed', entity: d };
     }
     const ufos = CC.UFOSystem && CC.UFOSystem.ufos;
     if (ufos) for (let i = 0; i < ufos.length; i++) {
       const u = ufos[i];
-      if (!u || u.state !== 'cruise' || !u.group || !u.group.visible || !u.pos) continue;
+      if (!u || u.disabled || u.state !== 'cruise' || !u.group || !u.group.visible || !u.pos) continue;
       if (fpvSweepEntity(v, u, fpvEntityRadius(u) + (v.radius || 1.1) + 0.4)) {
         return { type: 'ufo', entity: u };
       }
@@ -2219,7 +2404,8 @@
     const missiles = N.airDefense && N.airDefense.missiles;
     if (missiles) for (let i = 0; i < missiles.length; i++) {
       const m = missiles[i];
-      if (m && fpvSweepEntity(v, m, fpvEntityRadius(m) + (v.radius || 1.1) + 0.4)) {
+      if (m && !m.disabled && m.life > 0 &&
+          fpvSweepEntity(v, m, fpvEntityRadius(m) + (v.radius || 1.1) + 0.4)) {
         return { type: 'npc', entity: m };
       }
     }
@@ -2240,37 +2426,76 @@
 
   function fpvPlayerHit(v, agl) {
     const all = Game.vehicles || {};
+    const pilotKey = Game.fpvPilot && Game.fpvPilot.key;
     for (const key in all) {
       const other = all[key];
       if (!other || other === v || !other.group || !other.group.visible) continue;
+      // The parked pedestrian/car is the remote pilot and shares the launch
+      // coordinates. It must never count as an impact target on launch.
+      if (key === pilotKey) continue;
       if (agl >= 20 && !other.isAircraft) continue;
       if (fpvSweepEntity(v, other, fpvEntityRadius(other) + (v.radius || 1.1) + 0.4)) return true;
     }
     return false;
   }
 
+  // Remove an intercepted NPC from the world. Shahed drones and UFOs have their
+  // own state machines; aircraft, birds, helicopters and missiles are disabled
+  // and hidden so their update loops leave the wreck alone.
+  function fpvDestroyEntity(e) {
+    if (!e || e.disabled) return false;
+    if (typeof e.shootDown === 'function') {
+      return e.shootDown({ silentExplosion: true, silentMessage: true });
+    }
+    if (typeof e.vanish === 'function') {
+      e.vanish();
+      return true;
+    }
+    e.disabled = true;
+    if (e.group) e.group.visible = false;
+    if (e.mesh) e.mesh.visible = false;
+    if (e.trail) e.trail.visible = false;
+    if (e.active != null) e.active = false;
+    if (e.life != null) e.life = 0;
+    return true;
+  }
+
   function updateFpvCombat(v, world) {
     if (!v || !v.isFpv || v.state === 'destroyed') return;
+    // Give the brief launch/respawn animation a moment before impacts count.
+    if (v.spawnFlash > 0) return;
     const agl = v.pos.y - CC.heightAt(v.pos.x, v.pos.z);
     const target = fpvNpcHit(v, agl);
     if (target && target.type === 'ufo') {
-      target.entity.hit();
+      fpvDestroyEntity(target.entity);
       v.kills++;
-      v.explode(world, 'KAMIKAZE STRIKE — UFO HIT', { kamikaze: true });
-      Game.fpvMessage('UFO HIT — CRAFT CLIMBING AWAY — ' + v.kills +
+      fpvPayKill();
+      v.explode(world, 'KAMIKAZE STRIKE — UFO DESTROYED', { kamikaze: true });
+      Game.fpvMessage('UFO DESTROYED — +$5,000 — ' + v.kills +
         (v.kills === 1 ? ' KILL' : ' KILLS'), 3.4);
       return;
     }
     if (target && target.type === 'shahed') {
-      target.entity.shootDown({ silentExplosion: true, silentMessage: true });
+      fpvDestroyEntity(target.entity);
       v.kills++;
+      fpvPayKill();
       v.explode(world, 'KAMIKAZE STRIKE — SHAHED DESTROYED', { kamikaze: true });
-      Game.fpvMessage('SHAHED-136 INTERCEPTED — ' + v.kills + (v.kills === 1 ? ' KILL' : ' KILLS'), 3.2);
+      Game.fpvMessage('SHAHED-136 INTERCEPTED — +$5,000 — ' + v.kills +
+        (v.kills === 1 ? ' KILL' : ' KILLS'), 3.2);
+      return;
+    }
+    if (target) {
+      const label = String(target.entity.kind || target.entity.type || 'AIR TARGET').toUpperCase();
+      fpvDestroyEntity(target.entity);
+      v.kills++;
+      fpvPayKill();
+      v.explode(world, 'KAMIKAZE STRIKE — ' + label + ' DESTROYED', { kamikaze: true });
+      Game.fpvMessage(label + ' INTERCEPTED — +$5,000 — ' + v.kills +
+        (v.kills === 1 ? ' KILL' : ' KILLS'), 3.2);
       return;
     }
     if (fpvGroundHit(v) ||
         (agl < 34 && fpvWorldHit(v, world)) ||
-        target ||
         fpvPlayerHit(v, agl)) {
       v.explode(world, 'IMPACT — ' + (v.name || 'FPV'), { kamikaze: true });
     }
@@ -2531,7 +2756,7 @@
     const modeEl = $('fpvMode');
     if (modeEl) {
       modeEl.textContent = v.powerLoss ? 'POWER LOSS — LAND OR FIND TARGET' :
-        battery <= 20 ? 'LOW BATTERY — RETURN TO PAD' : 'FLIGHT MODE ACRO';
+        battery <= 20 ? 'LOW BATTERY — RETURN TO PILOT' : 'FLIGHT MODE JETPACK';
       modeEl.style.color = v.powerLoss || battery <= 20 ? '#ff6b6b' : '';
     }
   }
@@ -2766,7 +2991,8 @@
     const metres = Math.round(Game.routeDistance);
     const eta = Math.max(1, Math.round(Game.routeDistance / 13.4));
     const dist = metres >= 1000 ? (metres / 1000).toFixed(1) + ' km' : metres + ' m';
-    el.innerHTML = '<b>◈ WAYPOINT</b> ' + dir + ' · ' + dist + ' · ' + eta + 's';
+    const html = '<b>◈ WAYPOINT</b> ' + dir + ' · ' + dist + ' · ' + eta + 's';
+    if (el.innerHTML !== html) el.innerHTML = html;
     el.classList.remove('hidden');
   }
 
@@ -3248,10 +3474,13 @@
       g.fillStyle = t.wanted ? '#ff4fa3' : '#ff9de0';
       g.fillRect(q.x - s * 0.5, q.y - s * 0.5, s, s);
     });
-    // The FPV launch pad is tiny in 3D, so mark it clearly on both maps.
-    const fpvLaunch = fpvSpawn();
-    if (fpvLaunch) {
-      const q = proj.pt(fpvLaunch.x, fpvLaunch.z);
+    // FPV is piloted from wherever the player launched, so mark that pilot
+    // point instead of an airport pad. It is also the post-explosion respawn.
+    const fpvDrone = Game.vehicles && Game.vehicles.fpv;
+    const fpvPilot = Game.fpvPilot || (fpvDrone && fpvDrone.pilotLocked
+      ? { x: fpvDrone.home.x, z: fpvDrone.home.z } : null);
+    if (fpvPilot) {
+      const q = proj.pt(fpvPilot.x, fpvPilot.z);
       const s = compact ? 5.5 : 10;
       g.save();
       g.translate(q.x, q.y);
@@ -3261,7 +3490,7 @@
       g.shadowBlur = compact ? 6 : 14;
       g.fillRect(-s * 0.5, -s * 0.5, s, s);
       g.restore();
-      if (compact) addLabel('FPV PAD', fpvLaunch.x, fpvLaunch.z, '#ffcf8a', -11);
+      if (compact) addLabel('FPV PILOT', fpvPilot.x, fpvPilot.z, '#ffcf8a', -11);
     }
 
     proj.restore(g);
@@ -3392,6 +3621,8 @@
   function drawFullMap(v) {
     const c = $('fullMap');
     if (!c) return;
+    Game.mapDirty = false;
+    Game.mapDrawTimer = 1 / 30;
     resizeFullMapCanvas();
     drawMapCanvas(c.getContext('2d'), c.width, c.height, v, false);
   }
@@ -3415,7 +3646,8 @@
   function moveMapCursor(dx, dz) {
     const c = mapCursor();
     setMapCursor(c.x + dx, c.z + dz);
-    if (Game.mapOpen) drawFullMap(Game.vehicles[Game.activeKey]);
+    // Pointer/key events can fire far faster than the 30 Hz map redraw budget.
+    if (Game.mapOpen) Game.mapDirty = true;
   }
 
   function mapActionButtons() {
@@ -3472,7 +3704,7 @@
       Game.mapPanZ = (Game.mapPanZ || 0) + (center.z - (cz + (Game.mapPanZ || 0))) * (1 - prev / Game.mapZoom);
     }
     clampMapPan();
-    if (Game.mapOpen) drawFullMap(Game.vehicles[Game.activeKey]);
+    if (Game.mapOpen) Game.mapDirty = true;
   }
 
   function toggleFullMap(force) {
@@ -3480,6 +3712,11 @@
     const show = force == null ? !Game.mapOpen : !!force;
     Game.mapOpen = show;
     Game.keys = {};
+    if (show) {
+      Game.mapDirty = true;
+      Game.mapDrawTimer = 0;
+      Game.mapRenderTimer = 0;
+    }
     const overlay = $('mapOverlay');
     if (overlay) overlay.classList.toggle('hidden', !show);
     if (show) {
@@ -3553,7 +3790,7 @@
         Game.mapPanX -= dx / proj.scaleX;
         Game.mapPanZ -= dy / proj.scaleY;
         clampMapPan();
-        drawFullMap(Game.vehicles[Game.activeKey]);
+        Game.mapDirty = true;
       });
       c.addEventListener('pointerup', function (e) {
         dragging = false;
@@ -3565,7 +3802,7 @@
         if (!proj) return;
         const world = proj.invert(px, py);
         setMapCursor(world.x, world.z);
-        drawFullMap(Game.vehicles[Game.activeKey]);
+        Game.mapDirty = true;
       });
       c.addEventListener('wheel', function (e) {
         if (!Game.mapOpen) return;
@@ -3587,7 +3824,7 @@
     });
     updateMapFocus();
     window.addEventListener('resize', function () {
-      if (Game.mapOpen) drawFullMap(Game.vehicles[Game.activeKey]);
+      if (Game.mapOpen) Game.mapDirty = true;
     });
   }
   Game.toggleFullMap = toggleFullMap;
@@ -3615,7 +3852,7 @@
   // frame and leave the splash responsive until the player begins.
   function renderSplashFrame() {
     if (!Game.renderer || !Game.vehicles[Game.activeKey]) return;
-    Game.updateCamera(0, Game.vehicles[Game.activeKey], {});
+    Game.updateCamera(0, Game.vehicles[Game.activeKey], {}, true);
     Game.renderer.render(Game.scene, Game.camera);
     splashFramePending = false;
   }
@@ -3637,6 +3874,13 @@
     last = now;
     dt = U.clamp(dt, 0, 0.05);
     Game.time += dt;
+    // The full-screen planner freezes gameplay, so its WebGL background and
+    // full-map canvas only need occasional refreshes. Input marks the map
+    // dirty; these budgets cap repaints when events arrive faster than 30 Hz.
+    Game.mapDrawTimer = Math.max(0, Game.mapDrawTimer - dt);
+    Game.mapRenderTimer = Math.max(0, Game.mapRenderTimer - dt);
+    const renderWorld = !Game.mapOpen || Game.mapRenderTimer <= 0;
+    if (renderWorld) Game.mapRenderTimer = Game.mapOpen ? 1 / 15 : 0;
 
     // Keep the frame rate smooth on slower GPUs by trading a little resolution
     // for time. The shift is gradual and hysteretic so it never oscillates.
@@ -3658,7 +3902,7 @@
         }
       }
     }
-    if (CC.Drawbridges) CC.Drawbridges.update(dt, Game.time);
+    if (renderWorld && CC.Drawbridges) CC.Drawbridges.update(dt, Game.time);
 
     const v = Game.vehicles[Game.activeKey];
     const pad = CC.Gamepad.read();
@@ -3696,6 +3940,7 @@
       surface = v.update(dt, input, CC.World, Game.time);
       if (Game.ride && v.isPedestrian) updateAmusementRide(dt, v);
       CC.World.update(dt, Game.time);
+      if (CC.updateMapEditAnimations) CC.updateMapEditAnimations(dt);
       CC.NPCSystem.update(dt, v, CC.World, Audio);
       if (CC.AnimalSystem) CC.AnimalSystem.update(dt, v.pos);
       if (CC.FishSystem) CC.FishSystem.update(dt, v.pos, CC.NPCSystem);
@@ -3721,9 +3966,15 @@
     }
 
     // Drifting clouds, rain and the moving sun/moon all follow the player.
-    CC.Weather.update(dt, Game.time, v);
-    CC.LightingSystem.update(dt, Game.time, v, CC.Weather);
-    if (CC.StaticBatcher && CC.StaticBatcher.update) CC.StaticBatcher.update(v.pos, dt, 560);
+    // While the map is open the scene is frozen, so update it only when the
+    // throttled WebGL refresh actually renders a frame.
+    if (renderWorld) {
+      CC.Weather.update(dt, Game.time, v);
+      CC.LightingSystem.update(dt, Game.time, v, CC.Weather);
+      if (CC.StaticBatcher && CC.StaticBatcher.update) {
+        CC.StaticBatcher.update(v.pos, dt, 560);
+      }
+    }
 
     // The HUD canvases redraw the whole map and the DOM hints scan every NPC
     // array. 10 Hz / 5 Hz reduces DOM/canvas churn while staying responsive.
@@ -3736,7 +3987,10 @@
 
     Game.hitMessageCooldown = Math.max(0, Game.hitMessageCooldown - dt);
 
-    if (refreshText) {
+    // CSS hides the normal HUD while the goggles or full map are on, so skip
+    // its DOM and NPC scans entirely; only the relevant overlay updates below.
+    const hudActive = !Game.fpvActive && !Game.mapOpen;
+    if (refreshText && hudActive) {
       updateWorldUI();
       updateWantedHud();
       const actionEl = $('actionHint');
@@ -3783,16 +4037,16 @@
       }
     } // refreshText
 
-    if (refreshCanvas) {
+    if (refreshCanvas && hudActive) {
       drawGauge(v);
       drawMinimap(v);
     }
-    if (refreshCanvas && v.isFpv && Game.fpvActive) {
+    if (refreshCanvas && v.isFpv && Game.fpvActive && !Game.mapOpen) {
       drawFpvHud(v);
       Game.lastFpvHudDraw = Game.time;
     }
-    if (refreshCanvas && Game.mapOpen) drawFullMap(v);
-    if (refreshText) {
+    if (Game.mapOpen && Game.mapDirty && Game.mapDrawTimer <= 0) drawFullMap(v);
+    if (refreshText && !Game.fpvActive) {
       $('surface').textContent = Game.mapOpen ? 'Paused' :
         surface.charAt(0).toUpperCase() + surface.slice(1);
       $('camMode').textContent = Game.camModes[Game.camMode];
@@ -3826,7 +4080,7 @@
         if (fpvMsg) fpvMsg.classList.remove('show');
       }
     }
-    Game.renderer.render(Game.scene, Game.camera);
+    if (renderWorld) Game.renderer.render(Game.scene, Game.camera);
   }
 
   // Deterministic stepping hook used by the trailer harness. While manualFrame

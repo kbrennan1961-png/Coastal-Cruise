@@ -620,7 +620,7 @@
       this.exploded = false;
       this.damageFx = buildDamageFx(this.group);
       this.exhaustTimer = Math.random() * 0.2;
-      this.heavySmoker = Math.random() < 0.12;
+      this.heavySmoker = false;
       this.setVisible(false);
     }
 
@@ -678,12 +678,22 @@
         if (stage === 1) CC.Game.showMessage('Smoke pouring from the engine — find a repair soon', 2.6);
         else if (stage === 2) CC.Game.showMessage('Engine fire! Bail out now', 2.6);
       }
+      const prevStage = this.damageStage;
       this.damageStage = stage;
       if (this.fuse > 0) {
         this.fuse -= dt;
         if (this.fuse <= 0) { this.explode(world); return; }
       }
-      const smokeAmt = stage === 0 ? 0 : this.fuse > 0 ? 1 : burning ? 0.95
+      // Undamaged cars are the norm. Their smoke/flame meshes are already at
+      // zero opacity, so skip sixteen transform and material writes per frame.
+      if (stage === 0) {
+        if (prevStage > 0) {
+          this.damageFx.smoke.forEach(function (m) { m.material.opacity = 0; });
+          this.damageFx.flames.forEach(function (m) { m.material.opacity = 0; });
+        }
+        return;
+      }
+      const smokeAmt = this.fuse > 0 ? 1 : burning ? 0.95
         : U.clamp(0.45 + (this.damage - 0.4) * 1.4, 0.45, 0.85);
       const fireAmt = (stage >= 2 || this.fuse > 0)
         ? U.clamp(0.7 + (this.damage - 0.7) * 1.2, 0.55, 1) : 0;
@@ -1052,7 +1062,7 @@
       const throttle = (input && input.throttle > 0) ? 1.15 : 1;
       const count = 1;
       const strength = (heavy ? 0.16 : 0.07) * throttle;
-      const color = heavy ? 0x8e9399 : 0xc2c7cc;
+      const color = heavy ? 0xc9cfd3 : 0xdfe4e7;
       // Tailpipe: rear center-low, slightly offset to avoid spawning inside bumper.
       const bx = this.pos.x - f.x * (this.spec.length * 0.52) + right.x * (this.spec.width * 0.18);
       const by = this.pos.y + Math.max(0.18, this.spec.wheelRadius * 0.55);
@@ -1061,7 +1071,7 @@
       const opts = { spread: 0.06, rise: 0.1, vy: 0.22, vxz: 0.1, life: heavy ? 0.6 : 0.38, vx: f.x * backVel, vz: f.z * backVel, baseVy: 0.02 };
       world.particles.spawn(bx, by, bz, count, color, strength, opts);
       if (heavy && moving && Math.random() < 0.3) {
-        world.particles.spawn(bx - f.x * 0.05, by + 0.02, bz - f.z * 0.05, 1, 0xa0a6ac, strength * 0.55, opts);
+        world.particles.spawn(bx - f.x * 0.05, by + 0.02, bz - f.z * 0.05, 1, 0xd2d8dc, strength * 0.55, opts);
       }
     }
   }
@@ -1094,7 +1104,7 @@
       this.needReset = false;
       this.dustTimer = 0;
       this.exhaustTimer = Math.random() * 0.2;
-      this.heavySmoker = Math.random() < 0.1;
+      this.heavySmoker = false;
       this.setVisible(false);
     }
 
@@ -1231,13 +1241,13 @@
       const moving = Math.abs(speed || this.speed || 0) > 0.5;
       const count = 1;
       const strength = heavy ? 0.28 : 0.14;
-      const color = heavy ? 0x8e9399 : 0xc2c7cc;
+      const color = heavy ? 0xc9cfd3 : 0xdfe4e7;
       const bx = this.pos.x - f.x * (this.spec.length || 6) * 0.45;
       const by = this.pos.y + (this.spec.hover ? 0.1 : 0.35);
       const bz = this.pos.z - f.z * (this.spec.length || 6) * 0.45;
       const opts = { spread: 0.12, rise: 0.14, vy: 0.35, vxz: 0.18, life: heavy ? 0.8 : 0.55, vx: -f.x * 1.2, vz: -f.z * 1.2, baseVy: 0.02 };
       world.particles.spawn(bx, by, bz, count, color, strength, opts);
-      if (heavy && moving && Math.random() < 0.5) world.particles.spawn(bx - f.x * 0.12, by + 0.04, bz - f.z * 0.12, 1, 0xa0a6ac, strength * 0.6, opts);
+      if (heavy && moving && Math.random() < 0.5) world.particles.spawn(bx - f.x * 0.12, by + 0.04, bz - f.z * 0.12, 1, 0xd2d8dc, strength * 0.6, opts);
     }
 
     syncMesh(dt, climb, speed) {
@@ -1247,14 +1257,19 @@
         this.tilt.rotation.z = U.damp(this.tilt.rotation.z, -this.rollSmoothed * 0.28, 7, dt);
         this.tilt.rotation.x = U.damp(this.tilt.rotation.x, this.pitchSmoothed * 0.22, 7, dt);
         const flameOn = Math.abs(climb || 0) > 0.05 || Math.abs(speed) > 0.5 || Math.abs(this.vy || 0) > 0.2;
-        (this.spin.flames || []).forEach((f, i) => {
+        // Keep the flame flicker on simulation time so pause and slow motion
+        // affect it like everything else.
+        this.flamePhase = (this.flamePhase || 0) + (dt || 0) * 20;
+        const flames = this.spin.flames || [];
+        for (let i = 0; i < flames.length; i++) {
+          const f = flames[i];
           f.visible = flameOn;
           if (flameOn) {
-            const s = 0.75 + Math.sin((performance.now() * 0.02) + i * 1.7) * 0.2 + Math.abs(climb || 0) * 0.25;
+            const s = 0.75 + Math.sin(this.flamePhase + i * 1.7) * 0.2 + Math.abs(climb || 0) * 0.25;
             f.scale.set(1, s, 1);
             f.material.opacity = 0.55 + Math.random() * 0.3;
           }
-        });
+        }
       } else if (this.spec.hover) {
         // Positive roll/pitch move right/forward, so the model must lean that
         // way too: a right bank is a negative Z rotation and a forward pitch
@@ -1301,6 +1316,9 @@
       this.pos = new THREE.Vector3();
       this.prevPos = new THREE.Vector3();
       this.home = new THREE.Vector3();
+      this.homeHeading = 0;
+      this.pilotLocked = false;
+      this.spawnFlash = 0;
       this.velocity = new THREE.Vector3();
       this.heading = 0;
       this.pitch = 0;
@@ -1338,6 +1356,33 @@
       this.syncMesh(0);
     }
 
+    // The launch point is the on-foot pedestrian or car the player was using,
+    // never an airport pad. Keeping it on the drone also gives HUD home arrow
+    // and post-explosion respawn a single source of truth.
+    claimPilotPose(x, z, heading, altitude) {
+      const alt = altitude == null ? (this.spec.defaultAltitude || 2.2) : altitude;
+      this.setPose(x, z, heading, 0, alt);
+      this.homeHeading = heading || 0;
+      this.pilotLocked = true;
+      this.beginSpawnFlash();
+    }
+
+    // Show the airframe for a moment at the pilot's position before the
+    // goggles take over. The game loop hides it when the flash expires.
+    beginSpawnFlash() {
+      this.spawnFlash = 0.42;
+      this.setVisible(true);
+    }
+
+    endSpawnFlash() {
+      // Called exactly once when the launch flash timer reaches zero.
+      this.spawnFlash = 0;
+      const active = CC.Game && CC.Game.activeKey === this.key && CC.Game.fpvActive;
+      // Goggles are on: hide the airframe so it never sits in the camera.
+      // Otherwise (a parked/patrol respawn) leave it visible.
+      this.setVisible(!active);
+    }
+
     forward() {
       const f = this._fwd || (this._fwd = { x: 0, z: 0 });
       f.x = Math.sin(this.heading); f.z = Math.cos(this.heading);
@@ -1345,8 +1390,13 @@
     }
 
     reset(world) {
-      const spawn = CC.aircraftSpawn ? CC.aircraftSpawn(this.key, this.spawnIndex || 0) : null;
-      if (spawn) this.setPose(spawn.x, spawn.z, spawn.heading, 0, spawn.altitude);
+      if (this.pilotLocked) {
+        const alt = this.home.y - CC.heightAt(this.home.x, this.home.z);
+        this.setPose(this.home.x, this.home.z, this.homeHeading, 0, alt);
+      } else {
+        const spawn = CC.aircraftSpawn ? CC.aircraftSpawn(this.key, this.spawnIndex || 0) : null;
+        if (spawn) this.setPose(spawn.x, spawn.z, spawn.heading, 0, spawn.altitude);
+      }
       this.battery = 100;
       this.powerLoss = false;
       this.state = 'ready';
@@ -1365,6 +1415,10 @@
     }
 
     update(dt, input, world, time) {
+      if (this.spawnFlash > 0) {
+        this.spawnFlash = Math.max(0, this.spawnFlash - dt);
+        if (this.spawnFlash === 0) this.endSpawnFlash();
+      }
       if (this.state === 'destroyed') {
         this.respawnTimer -= dt;
         if (this.respawnTimer <= 0) this.respawn(world);
@@ -1391,38 +1445,47 @@
         (input.fpvRoll || 0), -1, 1);
       const yawIn = U.clamp(input.yaw != null ? input.yaw :
         (input.fpvYaw || 0), -1, 1);
-      this.pitch = U.damp(this.pitch, pitchIn * 0.5, 4.5, dt);
-      this.roll = U.damp(this.roll, rollIn * 0.62, 5.5, dt);
+      // Identical mapping and damping to the jetpack. Game.readInput flips the
+      // A/D axis for both vehicles, so W/S, A/D, Q/Z and Shift/Space behave the
+      // same way whichever one the player has equipped.
+      this.pitch = U.damp(this.pitch, pitchIn * 0.52, 4.5, dt);
+      this.roll = U.damp(this.roll, rollIn * 0.66, 5.5, dt);
       this.heading += yawIn * spec.turn * dt;
 
       const rawLift = input.lift != null ? input.lift :
         ((input.climb || input.boost) ? 1 : 0) -
         ((input.descend || input.handbrake || input.dive) ? 1 : 0);
       const climbInput = this.powerLoss ? -1 : U.clamp(rawLift, -1, 1);
-      this.vy = U.damp(this.vy, climbInput * spec.climb, 4.2, dt);
+      this.vy = U.damp(this.vy, climbInput * spec.climb, 5, dt);
       if (this.powerLoss) this.vy = Math.max(-22, this.vy - 9.8 * dt);
 
-      const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+      const f = this.forward();
       const rx = Math.cos(this.heading), rz = -Math.sin(this.heading);
-      const thrust = this.powerLoss ? 0 : spec.accel;
-      this.velocity.x += (fx * this.pitch * thrust + rx * this.roll * thrust * 0.72) * dt;
-      this.velocity.z += (fz * this.pitch * thrust + rz * this.roll * thrust * 0.72) * dt;
-      const drag = Math.exp(-1.8 * dt);
-      this.velocity.x *= drag;
-      this.velocity.z *= drag;
+      const authority = this.powerLoss ? 0 : 1;
+      const targetVx = (f.x * this.pitch + rx * this.roll * 0.72) * spec.maxSpeed * authority;
+      const targetVz = (f.z * this.pitch + rz * this.roll * 0.72) * spec.maxSpeed * authority;
+      this.velocity.x = U.damp(this.velocity.x, targetVx, 3.2, dt);
+      this.velocity.z = U.damp(this.velocity.z, targetVz, 3.2, dt);
       this.speed = Math.hypot(this.velocity.x, this.velocity.z);
-      if (this.speed > spec.maxSpeed) {
-        const s = spec.maxSpeed / this.speed;
-        this.velocity.x *= s;
-        this.velocity.z *= s;
-        this.speed = spec.maxSpeed;
-      }
 
       this.pos.x += this.velocity.x * dt;
       this.pos.z += this.velocity.z * dt;
       this.pos.y += this.vy * dt;
+      const floor = CC.heightAt(this.pos.x, this.pos.z) + spec.minAltitude;
+      if (this.pos.y < floor) {
+        this.pos.y = floor;
+        this.vy = Math.max(0, this.vy);
+        this.velocity.x *= 0.94;
+        this.velocity.z *= 0.94;
+        this.speed *= 0.94;
+      }
       const ceiling = spec.ceiling || 620;
       if (this.pos.y > ceiling) { this.pos.y = ceiling; this.vy = Math.min(0, this.vy); }
+      const W = C.WORLD, margin = 40;
+      if (this.pos.x > W.maxX + margin) this.pos.x = W.minX - margin;
+      if (this.pos.x < W.minX - margin) this.pos.x = W.maxX + margin;
+      if (this.pos.z > W.maxZ + margin) this.pos.z = W.minZ - margin;
+      if (this.pos.z < W.minZ - margin) this.pos.z = W.maxZ + margin;
       if (time && Math.random() < dt * 0.08) this.sats = 11 + Math.floor(Math.random() * 5);
       this.syncMesh(dt, time);
       return 'air';
@@ -1436,14 +1499,16 @@
       this.tilt.rotation.z = U.damp(this.tilt.rotation.z, -this.roll * 0.7, 8, dt || 0.016);
       this.tilt.rotation.x = U.damp(this.tilt.rotation.x, this.pitch * 0.55, 8, dt || 0.016);
       const rate = 46 + this.speed * 1.3;
-      this.rotors.forEach(function (rotor, i) {
-        rotor.rotation.y += (dt || 0) * rate * (i % 2 ? -1 : 1);
-      });
+      for (let i = 0; i < this.rotors.length; i++) {
+        this.rotors[i].rotation.y += (dt || 0) * rate * (i % 2 ? -1 : 1);
+      }
     }
 
     cameraEuler(out) {
+      // Kept for callers that still ask for a drone orientation. The gameplay
+      // camera is now a forward windshield view; roll is shown on the HUD.
       const e = out || new THREE.Euler(0, 0, 0, 'YXZ');
-      e.set(-this.pitch, this.heading + Math.PI, this.roll, 'YXZ');
+      e.set(-this.pitch, this.heading + Math.PI, 0, 'YXZ');
       return e;
     }
 
@@ -1470,6 +1535,7 @@
       const kamikaze = !!(opts && opts.kamikaze);
       this.state = 'destroyed';
       this.respawnTimer = kamikaze ? 2.6 : 1.8;
+      this.spawnFlash = 0;
       this.setVisible(false);
       const x = this.pos.x, y = this.pos.y, z = this.pos.z;
       if (world && world.createExplosion) {
@@ -1492,22 +1558,28 @@
     }
 
     respawn(world) {
-      const spawn = CC.aircraftSpawn ? CC.aircraftSpawn(this.key, this.spawnIndex || 0) : null;
-      if (spawn) this.setPose(spawn.x, spawn.z, spawn.heading, 0, spawn.altitude);
+      // A replacement quad appears at the pilot, not the airport. home is
+      // captured when FPV is chosen from the pedestrian or car, so this is the
+      // exact spot the first drone launched from.
+      if (this.pilotLocked) {
+        const alt = this.home.y - CC.heightAt(this.home.x, this.home.z);
+        this.setPose(this.home.x, this.home.z, this.homeHeading, 0, alt);
+      } else {
+        const spawn = CC.aircraftSpawn ? CC.aircraftSpawn(this.key, this.spawnIndex || 0) : null;
+        if (spawn) this.setPose(spawn.x, spawn.z, spawn.heading, 0, spawn.altitude);
+      }
       this.battery = 100;
       this.powerLoss = false;
       this.sats = 11 + Math.floor(Math.random() * 5);
-      this.name = FPV_NAMES[Math.floor(Math.random() * FPV_NAMES.length)];
       this.state = 'ready';
       this.landCooldown = 0;
-      const active = CC.Game && CC.Game.activeKey === this.key;
-      // Stay invisible while the goggles are on; the airframe would otherwise
-      // suddenly appear in the middle of the camera view on respawn.
-      this.setVisible(!!active && !(CC.Game && CC.Game.fpvActive));
+      this.beginSpawnFlash();
       if (world && world.particles) {
         world.particles.spawn(this.pos.x, this.pos.y, this.pos.z, 18, 0x9fe6ff, 1.2);
       }
-      if (active && CC.Game.fpvMessage) CC.Game.fpvMessage('NEW AIRFRAME — SORTIE ' + this.sortie, 2.2);
+      if (CC.Game && CC.Game.fpvMessage) {
+        CC.Game.fpvMessage('NEW AIRFRAME AT PILOT — SORTIE ' + this.sortie, 2.2);
+      }
     }
   }
 
@@ -1528,6 +1600,12 @@
         hair: 0x35291f, hat: 0x2f7d88, bag: 0x8f5b45
       });
       this.group = character.group;
+      this.proceduralChildren = this.group.children.slice();
+      this.downloaded = null;
+      this.downloadedKey = 'default';
+      // Yaw first, then pitch: swimming must tilt along the travel direction
+      // instead of rolling the character onto its side when heading east/west.
+      this.group.rotation.order = 'YXZ';
       this.head = character.head;
       this.legL = character.legL; this.legR = character.legR;
       this.armL = character.armL; this.armR = character.armR;
@@ -1548,6 +1626,34 @@
     }
 
     setVisible(v) { this.group.visible = v; }
+
+    // Swap the on-foot body for one of the baked animated GLB characters.
+    // Passing null/'default' restores the original procedural pedestrian.
+    setSkin(key) {
+      const wanted = key && key !== 'default' ? key : 'default';
+      if (this.downloaded) {
+        this.group.remove(this.downloaded.group);
+        this.downloaded = null;
+      }
+      this.downloadedKey = 'default';
+      this.proceduralChildren.forEach(function (child) { child.visible = true; });
+      this._skinRequest = wanted;
+      if (wanted === 'default') return Promise.resolve(null);
+      const DL = CC.DownloadedCharacterLoader;
+      if (!DL || !DL.build) return Promise.resolve(null);
+      const ped = this;
+      return DL.build(wanted, { clip: 'Idle' }).then(function (rig) {
+        if (!rig || ped._skinRequest !== wanted) return null;
+        ped.proceduralChildren.forEach(function (child) { child.visible = false; });
+        ped.group.add(rig.group);
+        ped.downloaded = rig;
+        ped.downloadedKey = wanted;
+        return rig;
+      }).catch(function (e) {
+        if (DL) DL.lastError = String((e && (e.stack || e)) || e);
+        return null;
+      });
+    }
 
     setPose(x, z, heading, speed) {
       this.pos.set(x, CC.heightAt(x, z), z);
@@ -1670,10 +1776,11 @@
       this.group.position.set(this.pos.x, this.pos.y, this.pos.z);
       this.group.rotation.y = this.heading;
       if (this.isSwimming) {
-        // Face-down breaststroke; deeper dives flatten out a little more.
+        // Face-down breaststroke aligned with heading; deeper dives flatten
+        // out a little more. Keep the roll tiny so it never reads as side-swim.
         const diveTilt = U.clamp(this.swimDepth / 4.6, 0, 1);
-        this.group.rotation.x = U.damp(this.group.rotation.x, 1.18 - diveTilt * 0.35, 7, dt);
-        this.group.rotation.z = Math.sin(this.walkPhase * 0.7) * 0.12;
+        this.group.rotation.x = U.damp(this.group.rotation.x, 1.35 - diveTilt * 0.3, 7, dt);
+        this.group.rotation.z = Math.sin(this.walkPhase * 0.7) * 0.04;
         this.armL.rotation.x = Math.sin(this.walkPhase) * 1.05;
         this.armR.rotation.x = -Math.sin(this.walkPhase) * 1.05;
         this.legL.rotation.x = -Math.sin(this.walkPhase * 0.8) * 0.55;
@@ -1682,6 +1789,10 @@
         this.group.position.y += Math.abs(Math.sin(this.walkPhase)) * 0.045 * moving;
         this.group.rotation.x = U.damp(this.group.rotation.x, (running ? 0.12 : 0.03) * moving, 8, dt);
         this.group.rotation.z = Math.sin(this.walkPhase) * 0.03 * moving;
+      }
+      if (this.downloaded) {
+        this.downloaded.setMoving(!this.isSwimming && (moving > 0.05 || running));
+        this.downloaded.update(dt);
       }
       if (this.visual && this.visual.blob) {
         this.visual.blob.userData.forceHidden = this.isSwimming;

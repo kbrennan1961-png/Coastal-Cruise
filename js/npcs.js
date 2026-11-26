@@ -245,7 +245,7 @@
       this.hornCooldown = 0;
       this.busIndex = busIndex;
       this.exhaustTimer = Math.random() * 0.25;
-      this.heavySmoker = Math.random() < 0.12;
+      this.heavySmoker = false;
 
       const c = document.createElement('canvas');
       c.width = 256; c.height = 64;
@@ -401,11 +401,11 @@
       const ey = this.group.position.y + 0.45;
       const ez = z - fz * len * 0.53 + rz * width * 0.22;
       const moving = Math.abs(this.speed || 0) > 0.4;
-      const color = heavy ? 0x8e9399 : 0xc2c7cc;
+      const color = heavy ? 0xc9cfd3 : 0xdfe4e7;
       const strength = heavy ? 0.16 : 0.07;
       const opts = { spread: 0.06, rise: 0.1, vy: 0.22, vxz: 0.1, life: heavy ? 0.6 : 0.38, vx: -fx * 0.45, vz: -fz * 0.45, baseVy: 0.02 };
       world.particles.spawn(ex, ey, ez, 1, color, strength, opts);
-      if (heavy && moving && Math.random() < 0.3) world.particles.spawn(ex - fx * 0.05, ey + 0.02, ez - fz * 0.05, 1, 0xa0a6ac, strength * 0.55, opts);
+      if (heavy && moving && Math.random() < 0.3) world.particles.spawn(ex - fx * 0.05, ey + 0.02, ez - fz * 0.05, 1, 0xd2d8dc, strength * 0.55, opts);
     }
   }
 
@@ -439,7 +439,7 @@
       this.yieldingPed = false;
       this.flash = 0;
       this.exhaustTimer = Math.random() * 0.25;
-      this.heavySmoker = Math.random() < 0.14;
+      this.heavySmoker = false;
 
       // Small "!" sprite shown when honking.
       const c = document.createElement('canvas');
@@ -483,6 +483,7 @@
       const soldiers = ctx.soldiers || sys.soldiers || [];
       const peds = ctx.pedestrians || sys.pedestrians || [];
       let road = this.road;
+      const roadCars = (ctx.trafficByRoad && ctx.trafficByRoad.get(road)) || all;
       const startLaneMax = Math.max(0.8, road.width * 0.5 - this.radius - 0.35);
       this.baseLane = Math.min(2.7, startLaneMax);
 
@@ -503,8 +504,10 @@
       const rx0 = -fz0, rz0 = fx0;
 
       let gap = Infinity, lead = null;
-      for (let i = 0; i < all.length; i++) {
-        const o = all[i];
+      // Only cars sharing this road can be the next car ahead. The per-frame
+      // bucket keeps this linear in cars-per-road instead of all town traffic.
+      for (let i = 0; i < roadCars.length; i++) {
+        const o = roadCars[i];
         if (o === this || o.disabled || o.road !== road || o.dir !== this.dir) continue;
         let ds = (o.s - this.s) * this.dir;
         if (ds < 0) ds += road._length;
@@ -572,6 +575,9 @@
           const ped = peds[i];
           if (!ped || !ped.position || ped.inVehicle) continue;
           const ax = ped.position.x - rp0.x, az = ped.position.z - rp0.z;
+          // along <= 18 and lane offset <= 5, so anything farther than 25 m
+          // from the road sample cannot be a chase target.
+          if (ax * ax + az * az > 25 * 25) continue;
           const along = ax * fx0 + az * fz0;
           if (along < 2 || along > 18 || along >= chasedAlong) continue;
           const lat = ax * rx0 + az * rz0;
@@ -589,6 +595,8 @@
         const so = soldiers[i];
         if (!so || so.x == null || so.z == null) continue;
         const sx = so.x - carX, sz = so.z - carZ;
+        // Along is capped at 26 m and lane comparisons stay near the road.
+        if (sx * sx + sz * sz > 34 * 34) continue;
         const along = sx * fx0 + sz * fz0;
         if (along < -2 || along > 26) continue;
         // Lane offsets are measured from the road centre, so compare there too.
@@ -623,6 +631,9 @@
         let stopDist = Infinity;
         const considerWalker = function (wx, wz) {
           const ax = wx - carX, az = wz - carZ;
+          // Yield checks only care about walkers within 18 m ahead; reject the
+          // rest before the dot products and road-lane projection.
+          if (ax * ax + az * az > 26 * 26) return;
           const along = ax * fx0 + az * fz0;
           if (along <= 0.5 || along > 18 || along >= stopDist) return;
           // yieldLane is measured from the road centre, so do the same for the
@@ -721,6 +732,8 @@
         const o = drivers[i];
         if (o === this || o === player || o.disabled || !o.group) continue;
         const q = o.group.position;
+        // Cheap AABB reject: contact radii are only a few metres.
+        if (Math.abs(q.x - x) > 8 || Math.abs(q.z - z) > 8) continue;
         const d = U.distance2D(x, z, q.x, q.z);
         const contactD = this.radius + (o.radius || 1.0);
         if (d < contactD && d < hitDist) { hit = o; hitDist = d; }
@@ -749,11 +762,13 @@
       // off the road using the same flee fields the gang robberies use.
       if (this.speed > 5 && peds.length && !this.yieldingPed) {
         let victim = null, victimDist = Infinity;
+        const hitR = this.radius + 1.2, hitR2 = hitR * hitR;
         for (let i = 0; i < peds.length; i++) {
           const ped = peds[i];
           if (!ped || !ped.position || ped.inVehicle || ped.hitCooldown > 0) continue;
-          const pd = U.distance2D(x, z, ped.position.x, ped.position.z);
-          if (pd < this.radius + 1.2 && pd < victimDist) { victim = ped; victimDist = pd; }
+          const vx = ped.position.x - x, vz = ped.position.z - z;
+          const pd2 = vx * vx + vz * vz;
+          if (pd2 < hitR2 && pd2 < victimDist) { victim = ped; victimDist = pd2; }
         }
         if (victim && typeof sys.knockPedestrian === 'function') {
           const lx = victim.position.x - x, lz = victim.position.z - z;
@@ -784,11 +799,11 @@
       const ey = this.group.position.y + Math.max(0.16, (spec.wheelRadius || 0.34) * 0.55);
       const ez = z - fz * len * 0.52 + rz * width * 0.18;
       const moving = Math.abs(this.speed || 0) > 0.4;
-      const color = heavy ? 0x8e9399 : 0xc2c7cc;
+      const color = heavy ? 0xc9cfd3 : 0xdfe4e7;
       const strength = heavy ? 0.16 : 0.07;
       const opts = { spread: 0.06, rise: 0.1, vy: 0.22, vxz: 0.1, life: heavy ? 0.6 : 0.38, vx: -fx * 0.45, vz: -fz * 0.45, baseVy: 0.02 };
       world.particles.spawn(ex, ey, ez, 1, color, strength, opts);
-      if (heavy && moving && Math.random() < 0.3) world.particles.spawn(ex - fx * 0.05, ey + 0.02, ez - fz * 0.05, 1, 0xa0a6ac, strength * 0.55, opts);
+      if (heavy && moving && Math.random() < 0.3) world.particles.spawn(ex - fx * 0.05, ey + 0.02, ez - fz * 0.05, 1, 0xd2d8dc, strength * 0.55, opts);
     }
   }
 
@@ -842,7 +857,7 @@
       this.crashCooldown = 0;
       this.fireCooldown = U.randRange(rng, 0.4, 1.5);
       this.exhaustTimer = Math.random() * 0.25;
-      this.heavySmoker = Math.random() < 0.14;
+      this.heavySmoker = false;
 
       const blue = mat(0x204c86);
       [-1.05, 1.05].forEach(function (x) {
@@ -1028,11 +1043,11 @@
       const ey = this.pos.y + Math.max(0.16, (spec.wheelRadius || 0.36) * 0.55);
       const ez = z - fz * len * 0.52 + rz * width * 0.18;
       const moving = Math.abs(this.speed || 0) > 0.4;
-      const color = heavy ? 0x8e9399 : 0xc2c7cc;
+      const color = heavy ? 0xc9cfd3 : 0xdfe4e7;
       const strength = heavy ? 0.16 : 0.07;
       const opts = { spread: 0.06, rise: 0.1, vy: 0.22, vxz: 0.1, life: heavy ? 0.6 : 0.38, vx: -fx * 0.45, vz: -fz * 0.45, baseVy: 0.02 };
       world.particles.spawn(ex, ey, ez, 1, color, strength, opts);
-      if (heavy && moving && Math.random() < 0.3) world.particles.spawn(ex - fx * 0.05, ey + 0.02, ez - fz * 0.05, 1, 0xa0a6ac, strength * 0.55, opts);
+      if (heavy && moving && Math.random() < 0.3) world.particles.spawn(ex - fx * 0.05, ey + 0.02, ez - fz * 0.05, 1, 0xd2d8dc, strength * 0.55, opts);
     }
   }
 
@@ -1251,7 +1266,6 @@
       CC.DownloadedCharacterLoader.build(key, opts || {}).then(function (rig) {
         if (!rig || ped.downloaded) return;
         ped.group.children.forEach(function (child) { child.visible = false; });
-        rig.group.position.y = 0;
         ped.group.add(rig.group);
         ped.downloaded = rig;
         ped.downloadedKey = key;
@@ -1311,6 +1325,13 @@
     // actually stops nearby. Everything stays non-explicit: they wave, then
     // the existing horn/pickup interaction handles the rest.
     findStoppedCar() {
+      // Several motel regulars call this every frame. Refreshing a few times a
+      // second is plenty for a pedestrian wandering a parking lot.
+      const now = CC.Game ? CC.Game.time : performance.now() * 0.001;
+      if (this._stoppedScanAt != null && now - this._stoppedScanAt < 0.25) {
+        return this._stoppedCar;
+      }
+      this._stoppedScanAt = now;
       const home = this.workHome;
       const stopped = [];
       const player = CC.Game && CC.Game.vehicles && CC.Game.vehicles[CC.Game.activeKey];
@@ -1325,7 +1346,7 @@
           stopped.push({ pos: car.group.position, priority: 1 });
         }
       }, this);
-      if (!stopped.length) return null;
+      if (!stopped.length) { this._stoppedCar = null; return null; }
       stopped.sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority;
         return U.distance2D(a.pos.x, a.pos.z, this.position.x, this.position.z) -
@@ -1333,8 +1354,9 @@
       });
       // Keep the lot from swarming: only the first two regulars work the player.
       const chosen = stopped[0];
-      if (chosen.priority === 0 && this.motelSlot > 1) return null;
-      return chosen;
+      this._stoppedCar = (!chosen || (chosen.priority === 0 && this.motelSlot > 1))
+        ? null : chosen;
+      return this._stoppedCar;
     }
 
     chooseGangTarget() {
@@ -1674,7 +1696,7 @@
       this.group.rotation.z = this.fleeTimer > 0 ? Math.sin(this.walkPhase) * 0.18 : 0;
       if (this.downloaded) {
         this.downloaded.setMoving(moving);
-        this.downloaded.mixer.update(dt);
+        this.downloaded.update(dt);
       }
     }
   }
@@ -3659,6 +3681,8 @@
       if (!spot || !parkSpots.length || !this.scene) return;
       const bc = this.beaconCustomer || (this.beaconCustomer = { state: 'idle', timer: 8 + rng() * 12 });
       bc.timer -= dt;
+      // Idle is the common case; don't build the four state-machine helpers.
+      if (bc.state === 'idle' && bc.timer > 0) return;
       const makeCar = () => {
         const kind = U.pick(rng, ['car', 'coupe', 'compact', 'pickup']);
         const color = U.pick(rng, [0xb9b6aa, 0x6d889f, 0xb56d5e, 0x8ca178, 0xc7a755, 0x707b84]);
@@ -3917,7 +3941,10 @@
             if (dir < 0 && road._hiddenStart && s < 24) dir = 1;
           }
           const kind = U.pick(rng, trafficKinds);
-          NPCSystem.traffic.push(new TrafficCar(scene, road, s, dir, kind));
+          const car = new TrafficCar(scene, road, s, dir, kind);
+          NPCSystem.traffic.push(car);
+          // Exactly one ordinary traffic car is the heavy smoker.
+          if (NPCSystem.traffic.length === 1) car.heavySmoker = true;
         }
       });
 
@@ -4315,7 +4342,7 @@
         this._chaseTimer = 0;
       }
       if (CC.TeenGangSystem && CC.TeenGangSystem.assignPolice) {
-        CC.TeenGangSystem.assignPolice(this);
+        CC.TeenGangSystem.assignPolice(dt, this);
       }
 
       // Marching columns move first so traffic avoids their current positions.
@@ -4328,12 +4355,33 @@
       trafficCtx.drivers.push.apply(trafficCtx.drivers, this.gangCars);
       trafficCtx.soldiers = this.soldiers;
       trafficCtx.pedestrians = this.pedestrians;
+      // Lead-car checks only need cars on the same road. Rebuild this small
+      // index once per frame instead of scanning every car from every car.
+      const byRoad = trafficCtx.trafficByRoad ||
+        (trafficCtx.trafficByRoad = new Map());
+      byRoad.clear();
       for (let i = 0; i < this.traffic.length; i++) {
+        const car = this.traffic[i];
+        if (car.disabled || !car.road) continue;
+        let bucket = byRoad.get(car.road);
+        if (!bucket) byRoad.set(car.road, bucket = []);
+        bucket.push(car);
+      }
+      for (let i = 0; i < this.traffic.length; i++) {
+        if (this.traffic[i].disabled) continue;
         this.traffic[i].update(dt, player, this.traffic, world, audio, trafficCtx);
       }
-      for (let i = 0; i < this.buses.length; i++) this.buses[i].update(dt, player, this.buses, world, audio);
-      for (let i = 0; i < this.policeCars.length; i++) this.policeCars[i].update(dt, player, world, audio);
-      for (let i = 0; i < this.policeHelicopters.length; i++) this.policeHelicopters[i].update(dt, player, world, audio);
+      for (let i = 0; i < this.buses.length; i++) {
+        if (!this.buses[i].disabled) this.buses[i].update(dt, player, this.buses, world, audio);
+      }
+      for (let i = 0; i < this.policeCars.length; i++) {
+        if (!this.policeCars[i].disabled) this.policeCars[i].update(dt, player, world, audio);
+      }
+      for (let i = 0; i < this.policeHelicopters.length; i++) {
+        const h = this.policeHelicopters[i];
+        if (h.disabled) continue;
+        h.update(dt, player, world, audio);
+      }
       this.gangMessageCooldown = Math.max(0, this.gangMessageCooldown - dt);
       this.recklessMessageCooldown = Math.max(0, this.recklessMessageCooldown - dt);
       this.updateBeaconCustomer(dt);
@@ -4375,6 +4423,7 @@
         if (d2 < 65*65 || this._doAnim || ped.isGang || ped.alerted || ped.fleeing) ped.update(dt, player, world);
       }
       for (let i = 0; i < this.gangCars.length; i++) {
+        if (this.gangCars[i].disabled) continue;
         this.gangCars[i].update(dt, player, this.gangCars, world, audio);
       }
       for (let i = 0; i < this.dogs.length; i++) {
@@ -4405,6 +4454,7 @@
       }
       for (let i = 0; i < this.birds.length; i++) {
         const b = this.birds[i];
+        if (b.disabled) continue;
         const dx = b.group.position.x - px, dz = b.group.position.z - pz;
         const vis = dx*dx + dz*dz < 260*260;
         b.group.visible = vis;
@@ -4422,11 +4472,16 @@
         const vis = dx*dx + dz*dz < 220*220;
         g.group.visible = vis; if (vis) g.update(dt, player);
       }
-      for (let i = 0; i < this.aircraft.length; i++) this.aircraft[i].update(dt);
-      for (let i = 0; i < this.drones.length; i++) this.drones[i].update(dt);
+      for (let i = 0; i < this.aircraft.length; i++) {
+        if (!this.aircraft[i].disabled) this.aircraft[i].update(dt);
+      }
+      for (let i = 0; i < this.drones.length; i++) {
+        if (!this.drones[i].disabled) this.drones[i].update(dt);
+      }
       if (this.airDefense) this.airDefense.update(dt);
       for (let i = 0; i < this.watercraft.length; i++) {
         const w = this.watercraft[i];
+        if (w.disabled) continue;
         const dx = w.group.position.x - px, dz = w.group.position.z - pz;
         const vis = dx*dx + dz*dz < 450*450;
         w.group.visible = vis; if (vis) w.update(dt);

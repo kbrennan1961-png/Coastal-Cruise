@@ -67,7 +67,10 @@ button.danger { background: #6a312f; border-color: var(--danger); }
 button.small { padding: 5px 8px; }
 button:disabled { opacity: 0.4; cursor: default; }
 
-#toolbar button span { font-size: 11px; }
+/* Keep every toolbar group reachable on 1280px-wide screens. Labels live in
+   each button's title tooltip; the icon + view controls stay visible. */
+#toolbar button span, .brand span { display: none; }
+#toolbar button { padding: 7px 8px; }
 
 main { display: flex; height: calc(100% - 52px - 28px); }
 

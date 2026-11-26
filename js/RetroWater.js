@@ -38,15 +38,20 @@
   /* ---------- shared wave equation ----------
      Layered sine/cosine swells in world X/Z + elapsed seconds. No randomness,
      no GPU-only math: physics can call this at any arbitrary point. The river
-     corridor is deliberately flat. */
-  function getWaterHeight(x, z, elapsedTime) {
-    const t = Number(elapsedTime) || 0;
+     corridor is deliberately flat. waveSum is split out so the mesh can cache
+     the static river factor per vertex instead of re-querying it 30 times/sec. */
+  function waveSum(x, z, t) {
     let h = 0;
     h += Math.sin(x * 0.075 + t * 1.15) * 0.42;
     h += Math.cos(z * 0.095 - t * 0.85) * 0.34;
     h += Math.sin((x + z) * 0.045 + t * 0.60) * 0.25;
     h += Math.cos((x - z) * 0.130 + t * 1.65) * 0.08;
-    return seaLevel() + h * WAVE_AMPLITUDE * waveFactor(x, z);
+    return h * WAVE_AMPLITUDE;
+  }
+
+  function getWaterHeight(x, z, elapsedTime) {
+    const t = Number(elapsedTime) || 0;
+    return seaLevel() + waveSum(x, z, t) * waveFactor(x, z);
   }
 
   /* ---------- procedural pixelated diamond texture ----------
@@ -195,14 +200,16 @@
     const pos = geo.attributes.position;
     const wx = new Float32Array(pos.count);
     const wz = new Float32Array(pos.count);
+    const wf = new Float32Array(pos.count);
     const baseY = seaLevel();
     for (let i = 0; i < pos.count; i++) {
       wx[i] = cx + pos.getX(i);
       wz[i] = cz + pos.getZ(i);
-      pos.setY(i, getWaterHeight(wx[i], wz[i], 0) - baseY);
+      wf[i] = waveFactor(wx[i], wz[i]);
+      pos.setY(i, waveSum(wx[i], wz[i], 0) * wf[i]);
     }
     pos.needsUpdate = true;
-    return { geometry: geo, wx: wx, wz: wz, baseY: baseY };
+    return { geometry: geo, wx: wx, wz: wz, wf: wf, baseY: baseY };
   }
 
   function makeLayer(plane, cx, cz, baseY, tex, mask, opacity, scroll, order, dynamic) {
@@ -282,10 +289,11 @@
     // inheriting wave interpolation from neighbouring bay vertices.
     let riverLayer = null;
     if (masks && masks.river) {
-      const flat = { geometry: plane.geometry.clone() };
-      const fp = flat.geometry.attributes.position;
-      for (let i = 0; i < fp.count; i++) fp.setY(i, 0);
-      fp.needsUpdate = true;
+      // The river is masked and unscrolled, so two triangles render identically
+      // to a full 48x48 clone of the animated bay mesh.
+      const flatGeo = new THREE.PlaneGeometry(width, height, 1, 1);
+      flatGeo.rotateX(-Math.PI / 2);
+      const flat = { geometry: flatGeo };
       planes.push(flat);
       riverLayer = makeLayer(flat, cx, cz, seaLevel() + 0.03,
         makePixelWaterTexture(24, { period: 16, phase: 8 }),
@@ -321,9 +329,9 @@
     if (state.lastVertTime >= 0 && t - state.lastVertTime < 1 / 30) return;
     state.lastVertTime = t;
     const pos = state.plane.geometry.attributes.position;
-    const wx = state.plane.wx, wz = state.plane.wz, base = state.plane.baseY;
+    const wx = state.plane.wx, wz = state.plane.wz, wf = state.plane.wf;
     for (let i = 0; i < pos.count; i++) {
-      pos.setY(i, getWaterHeight(wx[i], wz[i], t) - base);
+      pos.setY(i, waveSum(wx[i], wz[i], t) * wf[i]);
     }
     pos.needsUpdate = true;
   }

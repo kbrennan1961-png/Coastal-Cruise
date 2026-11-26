@@ -21,12 +21,21 @@
     const W = C.WORLD;
     if (x < W.minX + 8 || x > W.maxX - 8 || z < W.minZ + 8 || z > W.maxZ - 8) return false;
     if (CC.coast.isWater(x, z) || CC.coast.distanceToWater(x, z) < margin) return false;
-    const obstacles = (CC.World && CC.World.obstacles) || [];
-    for (let i = 0; i < obstacles.length; i++) {
-      const o = obstacles[i];
-      if (U.distance2D(x, z, o.x, o.z) < (o.r || 4) + 1.2) return false;
+    let blocked = false;
+    const hits = function (o) {
+      if (U.distance2D(x, z, o.x, o.z) < (o.r || 4) + 1.2) blocked = true;
+    };
+    // Bikes call this while moving; the shared obstacle grid avoids scanning
+    // every tree/building on the map each time.
+    if (CC.forEachNearbyObstacle) CC.forEachNearbyObstacle(x, z, 8, hits);
+    else {
+      const obstacles = (CC.World && CC.World.obstacles) || [];
+      for (let i = 0; i < obstacles.length; i++) {
+        hits(obstacles[i]);
+        if (blocked) break;
+      }
     }
-    return true;
+    return !blocked;
   }
 
   function roadPose(attempts) {
@@ -93,6 +102,7 @@
       this.respawnTimer = 0;
       this.orbitAngle = 0;
       this.orbitRadius = 6;
+      this.cruiseSpeed = U.randRange(rng, 13, 18);
 
       const pose = roadPose();
       this.pos = new THREE.Vector3(pose.x, CC.heightAt(pose.x, pose.z) + 0.38, pose.z);
@@ -140,6 +150,7 @@
       }
       this.mode = 'ride';
       this.timer = U.randRange(rng, 5, 13);
+      this.cruiseSpeed = U.randRange(rng, 13, 18);
     }
 
     farTarget() {
@@ -190,7 +201,9 @@
       else if (this.mode === 'burglary') this.updateBurglary(dt);
       else if (this.mode === 'flee') this.updateFlee(dt);
       else {
-        const d = this.moveToward(dt, U.randRange(rng, 13, 18));
+        // Hold one cruising speed per target instead of re-rolling it every
+        // frame, which otherwise makes the throttle visibly jitter.
+        const d = this.moveToward(dt, this.cruiseSpeed);
         if (d < 9) {
           const night = !!(CC.Weather && CC.Weather.night > 0.45);
           if (night) {
@@ -308,6 +321,7 @@
     teenCarThefts: 0,
     teenArrests: 0,
     messageCooldown: 0,
+    policeAssignTimer: 0,
     _decalGeo: null,
     _skidMat: null,
     _lawnMat: null,
@@ -350,8 +364,12 @@
       if (CC.Game && CC.Game.showMessage) CC.Game.showMessage(text, 3);
     },
 
-    // Called from NPCSystem.update before the cruisers are stepped.
-    assignPolice(N) {
+    // Called from NPCSystem.update before the cruisers are stepped. Ranking
+    // cruisers against suspects several times a second is indistinguishable
+    // from doing it every frame, so the expensive pass is throttled.
+    assignPolice(dt, N) {
+      const step = Number(dt) > 0 ? Number(dt) : 1 / 60;
+      this.policeAssignTimer -= step;
       const cars = (N && N.policeCars) || [];
       const suspects = this.bikes.filter(function (t) {
         return t.wanted && !t.caught && t.pos;
@@ -364,7 +382,8 @@
           if (!N.wanted) { p.chase = false; p.mode = 'patrol'; }
         }
       });
-      if (!suspects.length) return;
+      if (!suspects.length || this.policeAssignTimer > 0) return;
+      this.policeAssignTimer = 0.25;
       const playerWanted = !!(N && N.wanted && N.wantedStars > 0);
       suspects.forEach(function (suspect) {
         const ranked = cars.filter(function (p) {

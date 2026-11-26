@@ -235,14 +235,23 @@
       ? CC.TextureGenerator.facadeMaterial(color, style)
       : getMat('facade' + (style || '') + color, color);
   }
+  // Shared immutable primitives. StaticBatcher reads geometry but never
+  // mutates a source, so repeated props can reuse one buffer per size.
+  const boxGeoCache = Object.create(null);
+  const cylGeoCache = Object.create(null);
+
   function box(w, h, d, material, x, y, z) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    const key = w + '|' + h + '|' + d;
+    const geo = boxGeoCache[key] || (boxGeoCache[key] = new THREE.BoxGeometry(w, h, d));
+    const m = new THREE.Mesh(geo, material);
     m.position.set(x || 0, y || 0, z || 0);
     m.castShadow = true; m.receiveShadow = true;
     return m;
   }
   function cylinder(rt, rb, h, segs, material, x, y, z) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, segs), material);
+    const key = rt + '|' + rb + '|' + h + '|' + segs;
+    const geo = cylGeoCache[key] || (cylGeoCache[key] = new THREE.CylinderGeometry(rt, rb, h, segs));
+    const m = new THREE.Mesh(geo, material);
     m.position.set(x || 0, y || 0, z || 0);
     m.castShadow = true; m.receiveShadow = true;
     return m;
@@ -7684,7 +7693,9 @@
     const pz = player && player.pos ? player.pos.z : 0;
     const near = function (x, z, r) { const dx = x - px, dz = z - pz; return dx * dx + dz * dz < r * r; };
     const night = CC.Weather ? U.clamp(CC.Weather.night || 0, 0, 1) : 0;
-    if (Math.abs((Details._lastNight || -1) - night) > 0.01 || night > 0.02) {
+    // No need to reassign every Walmart light every frame once it is dark;
+    // only refresh when the night level actually moves a visible amount.
+    if (Math.abs((Details._lastNight || -1) - night) > 0.01) {
       lampMat.emissiveIntensity = 0.08 + night * 2.1;
       lampGlowMat.opacity = 0.03 + night * 0.4;
       for (let i = 0; i < Details.walmartLights.length; i++) {

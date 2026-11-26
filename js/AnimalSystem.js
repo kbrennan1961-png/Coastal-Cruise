@@ -109,6 +109,10 @@
       timer: Math.random() * 2,
       phase: Math.random() * Math.PI * 2,
       pack: opts.pack || null,
+      packTarget: new THREE.Vector3(),
+      animTime: 0,
+      roadTimer: 0,
+      nearRoad: false,
       alive: true
     };
   }
@@ -227,7 +231,7 @@
 
         a.timer -= dt;
         const home = a.pack ? a.pack.center : a.home;
-        const target = a.pack ? new THREE.Vector3(
+        const target = a.pack ? a.packTarget.set(
           home.x + Math.cos(a.phase + i * 0.9) * (1.8 + (i % 3) * 0.9),
           0,
           home.z + Math.sin(a.phase + i * 1.7) * (1.8 + (i % 3) * 0.9)
@@ -249,8 +253,15 @@
           const nx = a.pos.x + dx / dist * step;
           const nz = a.pos.z + dz / dist * step;
           if (!CC.coast.isWater(nx, nz)) {
-            const nr = CC.nearestRoad(nx, nz);
-            if (!(nr && nr.dist < nr.width * 0.5 + 1.8)) {
+            // nearestRoad scans the whole baked road network, so refresh the
+            // answer a few times a second rather than on every movement step.
+            a.roadTimer -= dt;
+            if (a.roadTimer <= 0) {
+              a.roadTimer = 0.2;
+              const nr = CC.nearestRoad(nx, nz);
+              a.nearRoad = !!(nr && nr.dist < nr.width * 0.5 + 1.8);
+            }
+            if (!a.nearRoad) {
               a.pos.x = nx; a.pos.z = nz;
               a.heading = Math.atan2(dx / dist, dz / dist);
             } else if (!a.pack) {
@@ -268,7 +279,8 @@
         delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
         if (delta < -Math.PI) delta += Math.PI * 2;
         a.group.rotation.y = cur + delta * Math.min(1, dt * 4);
-        const bob = moving ? Math.sin(performance.now() * 0.008 + a.phase) * 0.03 : 0;
+        a.animTime += dt;
+        const bob = moving ? Math.sin(a.animTime * 8 + a.phase) * 0.03 : 0;
         a.group.position.y += bob;
       }
     }

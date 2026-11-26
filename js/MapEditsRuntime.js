@@ -217,10 +217,41 @@
     }
   }
 
+  const mapEditRigs = [];
+
+  // Animated character models are baked GLBs, not static baked geometry. Build
+  // them through the same loader as the on-foot characters and tick their
+  // mixers from the main loop so map-placed people/creatures stay alive.
+  CC.updateMapEditAnimations = function (dt) {
+    for (let i = 0; i < mapEditRigs.length; i++) mapEditRigs[i].update(dt);
+  };
+
+  function buildAnimatedModel(group, a, record) {
+    const DL = CC.DownloadedCharacterLoader;
+    if (!DL || !DL.build) return;
+    const key = record.characterKey || a.characterKey || a.model || a.key;
+    const scale = Math.max(0.05, Number(a.scale) || 1);
+    DL.build(key, { clip: a.clip || 'Idle', scale: scale }).then(function (rig) {
+      if (!rig) return;
+      const x = Number(a.x) || 0, z = Number(a.z) || 0;
+      rig.group.position.set(x, groundY(x, z) + (Number(a.y) || 0), z);
+      rig.group.rotation.y = Number(a.rot) || 0;
+      group.add(rig.group);
+      mapEditRigs.push(rig);
+    }).catch(function (e) {
+      if (DL) DL.lastError = String((e && (e.stack || e)) || e);
+    });
+  }
+
   function buildModel(group, a) {
     const loader = CC.AssetLoader;
     const key = a.model || a.modelKey || a.key;
     if (!loader || !loader.available || !loader.models || !loader.models[key]) return;
+    const record = loader.models[key];
+    if (record && record.kind === 'character') {
+      buildAnimatedModel(group, a, record);
+      return;
+    }
     const scale = Math.max(0.05, Number(a.scale) || 1);
     let color = a.color;
     if (typeof color === 'string' && color.charAt(0) === '#') color = parseInt(color.slice(1), 16);
@@ -251,6 +282,7 @@
   // Called from World.init() once the scene and world arrays exist.
   CC.buildMapEdits = function (scene) {
     const assets = CC.mapEdits && CC.mapEdits.assets;
+    mapEditRigs.length = 0;
     if (!scene || !Array.isArray(assets) || assets.length === 0) return null;
     const group = new THREE.Group();
     group.name = 'Map editor assets';

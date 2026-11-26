@@ -16,7 +16,7 @@
 
   let scene = null;
   let built = false;
-  let nightAmount = 0;
+  let nightAmount = -1;
   const blobs = [];
   let blobMaterial = null;
   let blobGeometry = null;
@@ -485,7 +485,10 @@
     },
 
     setNight(value) {
-      nightAmount = U.clamp(value || 0, 0, 1);
+      const next = U.clamp(value || 0, 0, 1);
+      // Called every frame; only touch shared materials when the level moves.
+      if (Math.abs(next - nightAmount) < 0.005) return nightAmount;
+      nightAmount = next;
       if (beamMaterial) beamMaterial.opacity = 0.012 + nightAmount * 0.105;
       if (streetBeamMesh) streetBeamMesh.visible = nightAmount > 0.12;
       return nightAmount;
