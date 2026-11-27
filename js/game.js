@@ -773,7 +773,13 @@
   function bigMessage(text, kind, duration) {
     const el = $('bigMessage');
     if (!el) return;
-    el.textContent = text;
+    if (kind === 'wasted') {
+      // The death outcome is a full graphic, not the usual text card.
+      el.innerHTML = '<img class="deathGraphic" src="assets/ui/skull-crossbones.jpeg" alt="">' +
+        '<span class="deathRip">RIP</span>';
+    } else {
+      el.textContent = text;
+    }
     el.className = 'bigMessage show ' + (kind || '');
     Game.bigMessageTimer = duration || 3.2;
   }

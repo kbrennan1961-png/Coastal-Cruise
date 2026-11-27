@@ -401,7 +401,32 @@ html, body {
 }
 .bigMessage.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 .bigMessage.busted { border-color: #5aa0ff; box-shadow: 0 0 42px rgba(54, 126, 226, 0.5); }
-.bigMessage.wasted { border-color: #ff6a4d; box-shadow: 0 0 42px rgba(220, 67, 39, 0.5); }
+.bigMessage.wasted {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.deathGraphic {
+  width: min(48vw, 340px);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.9));
+}
+.deathRip {
+  color: #fff;
+  font-family: Impact, 'Arial Black', sans-serif;
+  font-size: clamp(64px, 12vw, 132px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 0.92;
+  -webkit-text-stroke: 4px #000;
+  text-shadow: 0 0 3px #000, 0 4px 0 #000, 0 8px 24px rgba(0, 0, 0, 0.95);
+}
 .bigMessage.private { border-color: #e07bb4; box-shadow: 0 0 42px rgba(224, 123, 180, 0.45); }
 .bigMessage.safe { border-color: #5fe0b6; box-shadow: 0 0 42px rgba(95, 224, 182, 0.4); }
 

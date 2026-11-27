@@ -9,6 +9,10 @@
   // original deterministic traffic/pedestrian layout.
   const recklessRng = CC.rng(20261120);
   const RECKLESS_BEHAVIORS = ['cutoff', 'tailgate', 'passRight', 'ramCar', 'chasePed', 'runLight'];
+  // The giant roach GLB ships two flight clips. Both are used: the kidnapping
+  // pose for the takeoff/landing beat and the straight pose for level cruising.
+  const ROACH_FLY_LAUNCH = 'giant_cockroach_armature|flying_kidnapping';
+  const ROACH_FLY_CRUISE = 'giant_cockroach_armature|flying_straight';
 
   function pace(kind) { return (CC.pace && CC.pace[kind]) || 1; }
 
@@ -814,6 +818,7 @@
       this.chaseSpeed = U.randRange(rng, 30, 35) * pace('traffic');
       this.mode = 'patrol';
       this.chase = false;
+      this.chaseDelay = 0;
       this.phase = rng() * Math.PI * 2;
       this.sirenTimer = 0;
       this.crashCooldown = 0;
@@ -890,7 +895,9 @@
       const isTeen = target !== player;
       const dx = target.pos.x - this.pos.x, dz = target.pos.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
-      const canChase = !!this.chase && !target.isAircraft && !(target.spec && target.spec.water);
+      this.chaseDelay = Math.max(0, this.chaseDelay - dt);
+      const canChase = !!this.chase && this.chaseDelay <= 0 &&
+        !target.isAircraft && !(target.spec && target.spec.water);
       this.mode = canChase && dist < 320 ? 'chase' : 'patrol';
 
       if (this.mode === 'patrol') {
@@ -1142,6 +1149,18 @@
       this.vy = 0;
       this.fleeX = 0; this.fleeZ = 0;
       this.walkPhase = rng() * Math.PI * 2;
+      if (this.isRoach) {
+        // A flight is a relocation, not a lap: it ends at a new piece of town
+        // with a fresh ground perimeter centred on the landing spot.
+        this.homeRadius = U.randRange(rng, 5, 9);
+        this.flyTimer = 0;
+        this.flyDuration = 0;
+        this.flyAltitude = 0;
+        this.inFlight = false;
+        this.flyCooldown = U.randRange(rng, 5, 12);
+        this.flyTarget = new THREE.Vector2(x, z);
+        this.roachClipName = '';
+      }
 
       const cop = this.role === 'cop';
       const worker = this.isWorker;
@@ -1241,6 +1260,87 @@
           CC.DownloadedCharacterLoader.lastError = String((e && (e.stack || e)) || e);
         }
       });
+    }
+
+    // Switch the downloaded roach rig without restarting an identical clip,
+    // and force the ground clips back after a flight (setMoving alone can miss
+    // a transition when the walk state did not change during the sortie).
+    roachPlayClip(name) {
+      const rig = this.downloaded;
+      if (!rig || this.roachClipName === name) return;
+      if (!rig.setClip(name, true)) rig.setClip('Fly', true);
+      this.roachClipName = name;
+    }
+
+    roachGroundClip(moving) {
+      if (!this.downloaded) return;
+      const name = moving ? 'Walk' : 'Idle';
+      this.downloaded.setMoving(moving);
+      if (this.roachClipName !== name) {
+        this.downloaded.setClip(name, true);
+        this.roachClipName = name;
+      }
+    }
+
+    roachLandingSpot() {
+      const obstacles = (CC.World && CC.World.obstacles) || [];
+      const clear = function (x, z) {
+        for (let i = 0; i < obstacles.length; i++) {
+          const o = obstacles[i];
+          if (U.distance2D(x, z, o.x, o.z) < (o.r || 1) + 3) return false;
+        }
+        return true;
+      };
+      // Prefer a fresh patch 18-52 units away; widen the search if the town is
+      // crowded. Always end on land, never in the surf.
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < 24; i++) {
+          const a = rng() * Math.PI * 2;
+          const r = pass === 0 ? U.randRange(rng, 18, 52) : U.randRange(rng, 55, 90);
+          const nx = this.position.x + Math.cos(a) * r;
+          const nz = this.position.z + Math.sin(a) * r;
+          if (CC.coast.isWater(nx, nz) || CC.coast.distanceToWater(nx, nz) < 2) continue;
+          if (!clear(nx, nz)) continue;
+          return new THREE.Vector2(nx, nz);
+        }
+      }
+      return new THREE.Vector2(
+        this.position.x + U.randRange(rng, -8, 8),
+        this.position.z + U.randRange(rng, -8, 8)
+      );
+    }
+
+    startRoachFlight() {
+      this.flyTarget.copy(this.roachLandingSpot());
+      this.flyDuration = U.randRange(rng, 5, 8);
+      this.flyTimer = this.flyDuration;
+      this.flyAltitude = U.randRange(rng, 6, 13);
+      this.inFlight = true;
+      this.flyCooldown = 0;
+      this.idleTimer = 0;
+      this.roachPlayClip(ROACH_FLY_LAUNCH);
+    }
+
+    endRoachFlight(relocate) {
+      if (!this.inFlight) return;
+      this.inFlight = false;
+      this.flyTimer = 0;
+      if (relocate) {
+        this.workHome.copy(this.flyTarget);
+        this.homeRadius = U.randRange(rng, 5, 9);
+        this.position.x = this.flyTarget.x;
+        this.position.z = this.flyTarget.y;
+        this.position.y = CC.heightAt(this.position.x, this.position.z);
+        this.target.set(
+          this.workHome.x + U.randRange(rng, -this.homeRadius, this.homeRadius),
+          this.workHome.y + U.randRange(rng, -this.homeRadius, this.homeRadius)
+        );
+        this.flyCooldown = U.randRange(rng, 10, 18);
+      } else {
+        this.flyCooldown = U.randRange(rng, 6, 12);
+      }
+      this.idleTimer = U.randRange(rng, 0.6, 2.2);
+      this.roachGroundClip(false);
     }
 
     chooseTarget() {
@@ -1409,6 +1509,7 @@
       }
 
       let moving = false;
+      let roachFlying = false;
       if (this.fleeTimer > 0) {
         this.fleeTimer -= dt;
         this.position.x += this.fleeX * dt;
@@ -1505,27 +1606,69 @@
             1 - Math.exp(-1.5 * dt));
         }
       } else if (this.isRoach) {
-        // Roaches dart between short targets, pause, then scurry again. They
-        // stay near their spawn so they read as local pests, not road traffic.
-        this.idleTimer -= dt;
-        const tx = this.target.x - this.position.x;
-        const tz = this.target.y - this.position.z;
-        const d = Math.hypot(tx, tz);
-        if (d < 0.45 || this.idleTimer <= 0) {
-          const a = rng() * Math.PI * 2;
-          const r = U.randRange(rng, 1.5, 5.5);
-          let nx = this.workHome.x + Math.cos(a) * r;
-          let nz = this.workHome.y + Math.sin(a) * r;
-          if (CC.coast.isWater(nx, nz)) { nx = this.workHome.x; nz = this.workHome.y; }
-          this.target.set(nx, nz);
-          this.idleTimer = U.randRange(rng, 0.6, 2.2);
+        // Roaches scurry around a small perimeter, then occasionally fly to a
+        // fresh patch of town and adopt a new perimeter around the landing.
+        if (this.fleeTimer > 0) {
+          // A car or a wanted player interrupted the sortie; the ballistic flee
+          // code above owns the rest of this frame.
+          if (this.inFlight) this.endRoachFlight(false);
         } else {
-          const step = Math.min(d, this.speed * dt);
-          this.position.x += tx / d * step;
-          this.position.z += tz / d * step;
-          this.heading = U.angleLerp(this.heading, Math.atan2(tx, tz), 1 - Math.exp(-9 * dt));
-          moving = true;
-          this.walkPhase += dt * 22;
+          this.idleTimer -= dt;
+          this.flyCooldown -= dt;
+          if (!this.inFlight && this.flyCooldown <= 0) this.startRoachFlight();
+
+          if (this.inFlight) {
+            roachFlying = true;
+            this.flyTimer -= dt;
+            const progress = U.clamp(1 - Math.max(0, this.flyTimer) / this.flyDuration, 0, 1);
+            const tx = this.flyTarget.x - this.position.x;
+            const tz = this.flyTarget.y - this.position.z;
+            const d = Math.hypot(tx, tz);
+            if (d > 0.01) {
+              const step = Math.min(d, Math.max(8, d / this.flyDuration) * dt);
+              this.position.x += tx / d * step;
+              this.position.z += tz / d * step;
+              this.heading = U.angleLerp(this.heading, Math.atan2(tx, tz), 1 - Math.exp(-6 * dt));
+            }
+            // Climb at takeoff, level out, then settle onto the new ground.
+            const climb = U.clamp(progress / 0.25, 0, 1);
+            const descent = U.clamp((progress - 0.78) / 0.22, 0, 1);
+            const wantedY = CC.heightAt(this.position.x, this.position.z) +
+              this.flyAltitude * climb * (1 - descent);
+            this.position.y += (wantedY - this.position.y) * (1 - Math.exp(-5 * dt));
+            moving = true;
+            this.walkPhase += dt * 14;
+            this.roachPlayClip(progress < 0.25 || progress > 0.84
+              ? ROACH_FLY_LAUNCH : ROACH_FLY_CRUISE);
+            if (this.flyTimer <= 0) {
+              this.endRoachFlight(true);
+              roachFlying = false;
+            }
+          } else {
+            const tx = this.target.x - this.position.x;
+            const tz = this.target.y - this.position.z;
+            const d = Math.hypot(tx, tz);
+            if (d < 0.45 || this.idleTimer <= 0) {
+              const a = rng() * Math.PI * 2;
+              const radius = this.homeRadius || 8;
+              const r = U.randRange(rng, Math.min(1.5, radius), radius);
+              let nx = this.workHome.x + Math.cos(a) * r;
+              let nz = this.workHome.y + Math.sin(a) * r;
+              if (CC.coast.isWater(nx, nz)) { nx = this.workHome.x; nz = this.workHome.y; }
+              this.target.set(nx, nz);
+              this.idleTimer = U.randRange(rng, 0.6, 2.2);
+            } else {
+              const step = Math.min(d, this.speed * dt);
+              this.position.x += tx / d * step;
+              this.position.z += tz / d * step;
+              this.heading = U.angleLerp(this.heading, Math.atan2(tx, tz), 1 - Math.exp(-9 * dt));
+              moving = true;
+              this.walkPhase += dt * 22;
+            }
+            // Ending a flight can leave the rig on Idle even though the roach
+            // immediately scurries in its new perimeter, so keep this in sync.
+            this.roachGroundClip(moving);
+          }
         }
       } else if (this.role === 'cop' && CC.NPCSystem && CC.NPCSystem.arrest.active &&
                  CC.NPCSystem.arrest.officer === this) {
@@ -1657,7 +1800,7 @@
 
       // Sidewalks and grass are full of solid props. Slide around them; only
       // trees inside the forest zones may be walked through.
-      if (this.deckY == null && CC.resolveObstacleSlide) {
+      if (!roachFlying && this.deckY == null && CC.resolveObstacleSlide) {
         const slide = CC.resolveObstacleSlide(
           this.position, startX, startZ, 0.52, { allowWoods: true, padding: 0.12 }
         );
@@ -1671,7 +1814,9 @@
 
       const groundY = this.deckY != null ? this.deckY :
         CC.heightAt(this.position.x, this.position.z) + this.deckOffset;
-      if (this.fleeTimer <= 0) this.position.y = groundY;
+      if (roachFlying) {
+        // The flight arc above owns altitude until the roach lands.
+      } else if (this.fleeTimer <= 0) this.position.y = groundY;
       else this.position.y = Math.max(this.position.y, groundY);
       this.group.position.copy(this.position);
       this.group.rotation.y = this.heading;
@@ -3158,6 +3303,8 @@
     currentPlayer: null,
     wanted: false,
     wantedStars: 0,
+    wantedGainCooldown: 0,
+    STAR_COOLDOWN: 12,
     arrestCooldown: 0,
     // Walking cops start a short struggle instead of booking someone instantly.
     arrest: {
@@ -3184,18 +3331,21 @@
       } else {
         this.crimeTimer = 0;
         this.evadeTimer = 0;
+        this.wantedGainCooldown = 0;
       }
       return changed;
     },
 
     reportCrime(reason) {
       if (!reason || this.arrestCooldown > 0) return;
-      const violent = /pedestrian|officer|cop|police car/i.test(reason);
-      const theft = /steal|theft|stolen/i.test(reason);
-      let stars;
-      if (this.wantedStars > 0) stars = this.wantedStars + 1;
-      else stars = theft ? 1 : violent ? 2 : 1;
-      this.setWantedStars(stars);
+      // Every crime opens the first star. While already wanted, further stars
+      // need a breather so one collision chain does not jump to five stars.
+      let stars = this.wantedStars > 0 ? this.wantedStars : 1;
+      if (this.wantedStars > 0 && this.wantedGainCooldown <= 0) stars += 1;
+      if (stars > this.wantedStars) {
+        this.setWantedStars(stars);
+        this.wantedGainCooldown = this.STAR_COOLDOWN + (stars - 1) * 3;
+      }
       this.evadeTimer = 0;
       if (CC.Game && CC.Game.showMessage) {
         CC.Game.showMessage(reason + ' — ' + this.wantedStars + '★ wanted', 3);
@@ -3562,7 +3712,10 @@
       this.setWantedStars(0);
       this.policeSighting = false;
       this.arrestCooldown = 2.5;
-      (this.policeCars || []).forEach(function (p) { p.mode = 'patrol'; p.chase = false; });
+      this.wantedGainCooldown = 0;
+      (this.policeCars || []).forEach(function (p) {
+        p.mode = 'patrol'; p.chase = false; p.chaseDelay = 0;
+      });
       (this.policeHelicopters || []).forEach(function (h) { h.active = false; h.setVisible(false); });
     },
     // Immediate booking is only valid for a suspect who is already on foot.
@@ -3957,7 +4110,7 @@
         return r._length > 180 && !r._hiddenStart && !r._hiddenEnd;
       });
       if (!patrolRoads.length) patrolRoads.push.apply(patrolRoads, roads);
-      for (let i = 0; i < 12 && patrolRoads.length; i++) {
+      for (let i = 0; i < 6 && patrolRoads.length; i++) {
         const road = patrolRoads[i % patrolRoads.length];
         const dir = i % 2 ? -1 : 1;
         const s = U.randRange(rng, 18, road._length - 18);
@@ -4355,6 +4508,7 @@
       this.currentPlayer = player;
       this.policeSighting = false;
       this.arrestCooldown = Math.max(0, this.arrestCooldown - dt);
+      this.wantedGainCooldown = Math.max(0, this.wantedGainCooldown - dt);
       this._animBudget = (this._animBudget || 0) + dt;
       const doAnim = this._animBudget >= 0.05;
       if (doAnim) this._animBudget = 0;
@@ -4376,11 +4530,18 @@
           return U.distance2D(a.pos.x, a.pos.z, player.pos.x, player.pos.z) -
             U.distance2D(b.pos.x, b.pos.z, player.pos.x, player.pos.z);
         });
-        const activeCars = Math.min(this.policeCars.length, 2 + this.wantedStars * 2);
-        ranked.forEach(function (p, i) { p.chase = i < activeCars; });
+        // Roll the pursuit in gradually instead of turning every nearby cruiser
+        // loose in the same quarter-second.
+        const activeCars = Math.min(this.policeCars.length, Math.min(4, 1 + this.wantedStars));
+        ranked.forEach(function (p, i) {
+          const shouldChase = i < activeCars;
+          if (shouldChase && !p.chase) p.chaseDelay = 1.5 + i * 2;
+          if (!shouldChase) p.chaseDelay = 0;
+          p.chase = shouldChase;
+        });
         this._chaseTimer = 0.25;
       } else if (!chaseable) {
-        this.policeCars.forEach(function (p) { p.chase = false; });
+        this.policeCars.forEach(function (p) { p.chase = false; p.chaseDelay = 0; });
         this._chaseTimer = 0;
       }
       if (CC.TeenGangSystem && CC.TeenGangSystem.assignPolice) {

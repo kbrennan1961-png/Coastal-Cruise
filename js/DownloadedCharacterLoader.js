@@ -13,7 +13,6 @@
   const U = CC.util || {};
   let loaderPromise = null;
   const templates = Object.create(null);
-  const actionsByClip = typeof WeakMap === 'function' ? new WeakMap() : null;
 
   function clamp(value, lo, hi) {
     return Math.max(lo, Math.min(hi, value));
@@ -207,12 +206,10 @@
       const clips = template.clips;
       const actions = {};
       for (const name in clips) {
-        let action = actionsByClip && actionsByClip.get(clips[name]);
-        if (!action) {
-          action = mixer.clipAction(clips[name]);
-          if (actionsByClip) actionsByClip.set(clips[name], action);
-        }
-        actions[name] = action;
+        // The mixer already returns one action per clip for this character.
+        // A global cache would bind every later rig to the first mixer, so all
+        // but the first roach would keep playing that character's clips.
+        actions[name] = mixer.clipAction(clips[name]);
       }
 
       let current = null;
