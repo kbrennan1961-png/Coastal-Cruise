@@ -4467,32 +4467,40 @@
         }
         return true;
       };
+      const placedRoaches = [];
       for (let i = 0; i < roachCount; i++) {
         let spot = null;
-        for (let attempt = 0; attempt < 60 && !spot; attempt++) {
+        let bestNear = null;
+        let bestDistance = Infinity;
+        const nearStart = i < roachCount / 2;
+        const attempts = nearStart ? 160 : 60;
+        for (let attempt = 0; attempt < attempts && !spot; attempt++) {
           const candidate = findLandSpot(4);
           if (!roachSpotClear(candidate.x, candidate.z)) continue;
+          if (placedRoaches.some(function (p) {
+            return U.distance2D(candidate.x, candidate.z, p.x, p.z) < 16;
+          })) continue;
           const nr = CC.nearestRoad(candidate.x, candidate.z);
-          if (nr && nr.dist > 22) continue;
+          const roadDistance = nr ? nr.dist : 0;
           // Half the roaches stay close to the starting road so players meet
           // them early; the rest scatter across the wider town.
           const fromStart = U.distance2D(candidate.x, candidate.z, -106, -35);
-          if (i < roachCount / 2 && (fromStart < 18 || fromStart > 70)) continue;
-          spot = candidate;
-        }
-        // Very rarely the tight ring has no clear roadside land. Fall back to
-        // the old, wider ring before giving up and scattering anywhere.
-        if (!spot && i < roachCount / 2) {
-          for (let attempt = 0; attempt < 60 && !spot; attempt++) {
-            const candidate = findLandSpot(4);
-            if (!roachSpotClear(candidate.x, candidate.z)) continue;
-            const nr = CC.nearestRoad(candidate.x, candidate.z);
-            if (nr && nr.dist > 22) continue;
-            if (U.distance2D(candidate.x, candidate.z, -106, -35) > 110) continue;
+          if (nearStart) {
+            if (roadDistance > 35) continue;
+            if (fromStart >= 18 && fromStart <= 70) { spot = candidate; break; }
+            // Keep the closest clear roadside spot even if the tight ring missed.
+            if (fromStart >= 18 && fromStart < bestDistance) {
+              bestNear = candidate;
+              bestDistance = fromStart;
+            }
+          } else {
+            if (roadDistance > 22) continue;
             spot = candidate;
           }
         }
+        if (!spot && nearStart && bestNear) spot = bestNear;
         if (!spot) spot = findLandSpot(4);
+        placedRoaches.push(spot);
         const roach = new Pedestrian(scene, spot.x, spot.z, 'roach');
         roach.homeRadius = 8;
         roach.radius = ROACH_RADIUS;
