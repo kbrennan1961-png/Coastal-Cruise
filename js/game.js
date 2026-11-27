@@ -1952,9 +1952,10 @@
       CC.NPCSystem.releaseStolenCar({ x: old.pos.x, z: old.pos.z, h: old.heading });
       Game.activeStolenCar = null;
     }
-    // The pilot vehicle/pedestrian remains visible at the launch point; FPV is
-    // a remote drone, not a body swap into the quad.
-    if (!fpvLaunch) old.setVisible(false);
+    // Switching to FPV replaces the active body with the quad. The launch
+    // vehicle/pedestrian is hidden while the drone is equipped so the airframe
+    // never spawns inside its mesh; it returns when the goggles come off.
+    if (old !== next) old.setVisible(false);
     Game.resetCameraLook();
     if (next.isAircraft && pose.altitude != null) {
       next.setPose(pose.x, pose.z, pose.h, pose.s, pose.altitude);
