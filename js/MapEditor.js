@@ -1514,12 +1514,12 @@
     }
   }
 
-  // Static hosts often cache generated JS for hours, so changing MapEdits.js
-  // alone can leave the game reading yesterday's roads. Rewrite the two page
-  // script URLs with a fresh version each time we apply.
+  // Static hosts often cache JS for hours, so changing MapEdits.js alone can
+  // leave the game reading yesterday's roads, or leave the editor running an
+  // old prompt dialog. Rewrite all versioned page scripts with each apply.
   function cacheBustScriptUrls(text, version) {
     return String(text).replace(
-      /(src=["'])js\/(MapEdits|CommunityAssets)\.js(?:\?v=[^"']*)?(["'])/g,
+      /(src=["'])js\/(MapEdits|CommunityAssets|MapEditor)\.js(?:\?v=[^"']*)?(["'])/g,
       function (_match, open, name, close) {
         return open + 'js/' + name + '.js?v=' + version + close;
       });
