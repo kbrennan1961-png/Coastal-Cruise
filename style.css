@@ -400,7 +400,7 @@ html, body {
   transition: opacity 0.2s, transform 0.25s;
 }
 .bigMessage.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-.bigMessage.busted { border-color: #5aa0ff; box-shadow: 0 0 42px rgba(54, 126, 226, 0.5); }
+.bigMessage.busted,
 .bigMessage.wasted {
   display: flex;
   flex-direction: column;
@@ -411,7 +411,7 @@ html, body {
   border: 0;
   box-shadow: none;
 }
-.deathGraphic {
+.outcomeGraphic {
   width: min(48vw, 340px);
   height: auto;
   object-fit: contain;

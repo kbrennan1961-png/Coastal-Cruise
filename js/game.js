@@ -773,10 +773,12 @@
   function bigMessage(text, kind, duration) {
     const el = $('bigMessage');
     if (!el) return;
-    if (kind === 'wasted') {
-      // The death outcome is a full graphic, not the usual text card.
-      el.innerHTML = '<img class="deathGraphic" src="assets/ui/skull-crossbones.jpeg" alt="">' +
-        '<span class="deathRip">RIP</span>';
+    if (kind === 'wasted' || kind === 'busted') {
+      // Arrest and death outcomes are full graphics, not the usual text card.
+      el.innerHTML = kind === 'busted'
+        ? '<img class="outcomeGraphic" src="assets/ui/arrested-emoji.webp" alt="">'
+        : '<img class="outcomeGraphic" src="assets/ui/skull-crossbones.jpeg" alt="">' +
+          '<span class="deathRip">RIP</span>';
     } else {
       el.textContent = text;
     }
