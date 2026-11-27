@@ -42,13 +42,15 @@ DirectoryIndex index.html
 </IfModule>
 
 <IfModule mod_headers.c>
-  # The game entry page and exported map patch must never be stale.
-  <FilesMatch "^(index\.html|MapEdits\.js)$">
-    Header set Cache-Control "no-cache, must-revalidate"
-  </FilesMatch>
-
+  # Generic assets first, then the generated/pages exception below. Later
+  # FilesMatch blocks override earlier ones, so the no-store rule must be last.
   <FilesMatch "\.(js|css|json|m4a|mp3|ogg|wav|png|jpe?g|glb)$">
     Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+
+  <FilesMatch "^(index\.html|map-editor\.html|MapEdits\.js|CommunityAssets\.js)$">
+    Header set Cache-Control "no-store, must-revalidate"
+    Header unset Expires
   </FilesMatch>
 </IfModule>
 
