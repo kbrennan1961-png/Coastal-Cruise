@@ -27,8 +27,8 @@ automatic rebuild and redeploy. The site is fully static; nginx serves the
 files from a Docker image that pulls the Git LFS media at build time. Netlify
 is no longer the active host. The Dockerfile uses GitHub's commit API as a
 cache buster so the source clone is rebuilt on every push. `nginx.conf` serves
-`index.html`, `map-editor.html`, `js/MapEdits.js` and `js/CommunityAssets.js`
-with `no-store`, and **Apply to game** also rewrites those script URLs with a
+`index.html`, `map-editor.html`, `js/MapEditor.js`, `js/MapEdits.js` and
+`js/CommunityAssets.js` with `no-store`, and **Apply to game** also rewrites those script URLs with a
 fresh `?v=` timestamp, so an exported road edit cannot be hidden by a cached
 copy of the patch.
 

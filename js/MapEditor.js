@@ -2957,12 +2957,13 @@
       $('assetDesc').value = '';
       $('assetGenerate').checked = false;
       $('assetPrompt').value = '';
-      $('assetPromptRow').hidden = true;
-      $('assetGenerateHint').hidden = true;
+      $('assetPrompt').oninput = function () {
+        // Typing a prompt is the common path, so don't make people discover a
+        // separate checkbox before the field will accept text.
+        if ($('assetPrompt').value.trim()) $('assetGenerate').checked = true;
+      };
       $('assetGenerate').onchange = function () {
         const on = !!$('assetGenerate').checked;
-        $('assetPromptRow').hidden = !on;
-        $('assetGenerateHint').hidden = !on;
         if (on && !$('assetPrompt').value.trim()) {
           $('assetPrompt').value = $('assetDesc').value.trim();
         }
@@ -3569,6 +3570,21 @@
   $('wpSaveBtn').addEventListener('click', saveWaypoint);
   $('wpDeleteBtn').addEventListener('click', deleteActiveWaypoint);
   $('blenderSendBtn').addEventListener('click', openBlenderDialog);
+  $('blenderPromptBtn').addEventListener('click', function () {
+    const prompt = $('blenderPrompt').value.trim();
+    if (!prompt) {
+      setMessage('Enter a detailed prompt before creating a Blender job.');
+      $('blenderPrompt').focus();
+      return;
+    }
+    const name = $('blenderAssetName').value.trim() || 'Blender model';
+    const info = {
+      name: name, description: '', model: MODEL_KEYS[0], generate: true,
+      prompt: prompt, key: 'ai_' + (slugify(name) || 'generated-asset')
+    };
+    const at = snap(screenToWorld(canvas.clientWidth * 0.5, canvas.clientHeight * 0.5));
+    placeGeneratedAsset(info, at);
+  });
   $('blenderCloseBtn').addEventListener('click', function () { $('blenderDialog').hidden = true; });
   $('blenderPatchBtn').addEventListener('click', downloadCurrentPatchJSON);
   $('blenderImportBtn').addEventListener('click', function () {

@@ -270,7 +270,7 @@
         <p><b>2D / 3D</b> (or <b>P</b>) toggles the editor view. Use the <b>Pan</b> button beside the zoom controls (or <b>H</b> / middle-drag) to drag the map around when it is enlarged. The 3D preview renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. Use <b>Game / Realistic</b> to switch between the in-game PS2 look and softer Blender/Unreal-style lighting, shadows and building facades. Use <b>View / Move / Rotate / Scale</b> (keys <b>1–4</b>) for Blender-like gizmo editing of the selected building, landmark or model. For exact Blender geometry, place a baked <b>Model</b> asset; plain <b>Building</b> entries are detailed facades generated from their map dimensions.</p>
         <p><b>Trailer</b> (<b>K</b>): click a start point, then a finish point. Ground vehicles are routed along roads when rendered; aircraft and jetpacks fly straight to the finish. Export the shot JSON and render one clip per shot with <code>npm run trailer -- --shots trailer-shots.json</code>.</p>
         <p><b>Mission</b> (<b>J</b>) plans an INAV-style FPV flight. Click the map to add waypoints, drag them to move, and use the <b>INAV MISSIONS</b> panel to edit actions (WAYPOINT, POSHOLD_TIME, JUMP, SET_POI, LAND), cm altitudes and cm/s speeds. Altitudes are relative to mission home (the FPV spawn point if left blank); the last action is always RTH. Missions are exported through <b>Apply to game</b>; start one from the game console with <code>CC.MissionPlanner.start(0)</code> and stop it with <code>CC.MissionPlanner.stop()</code>. <b>Import KML…</b> reads Placemark coordinates, name and description; KML altitude becomes cm above the first point.</p>
-        <p><b>Blender</b> opens the round-trip helper. The <code>to-blender</code> and <code>to-editor</code> commands carry roads, assets, baked meshes, landmarks, challenges, trailer shots and elevation between Blender 3.6 and this editor.</p>
+        <p><b>Blender</b> opens the round-trip helper. The <code>to-blender</code> and <code>to-editor</code> commands carry roads, assets, baked meshes, landmarks, challenges, trailer shots and elevation between Blender 3.6 and this editor. To make a new model, either type a <b>Detailed prompt for Blender</b> here and click <b>Create prompt job</b>, or place a <b>Model</b> and type the prompt in NEW ASSET — typing it there turns on Blender generation automatically.</p>
         <p><b>Import data</b> accepts OSM XML, GeoJSON, or this editor's JSON patch shape, including roads, buildings, trees, baked models, elevation and trailer shots.</p>
       </section>
     </aside>
@@ -298,12 +298,12 @@
       </label>
       <label class="checkRow">
         <input id="assetGenerate" type="checkbox" />
-        <span>Generate a new model with Blender 3.6 from a detailed prompt</span>
+        <span>Generate a new model with Blender 3.6 (typing a prompt enables this)</span>
       </label>
-      <label id="assetPromptRow" hidden>Detailed prompt
+      <label id="assetPromptRow">Detailed prompt for Blender
         <textarea id="assetPrompt" rows="4" placeholder="Low-poly weathered harbor lighthouse, red and white bands, 14 m tall, warm amber lantern, tin roof"></textarea>
       </label>
-      <p id="assetGenerateHint" class="promptHint" hidden>
+      <p id="assetGenerateHint" class="promptHint">
         Blender 3.6 has no built-in text-to-3D or required MCP add-on. The prompt is handed to
         a local <code>bpy</code> generator. After the helper finishes, import its result JSON from
         the Blender round-trip dialog; the model lands at this asset's current map position.
@@ -503,6 +503,15 @@
       <label>Blender → editor
         <code id="blenderFromCode">node tools/blender-map-bridge.js to-editor map.blend patch.json</code>
       </label>
+      <div id="blenderPromptRow">
+        <label>New model name
+          <input id="blenderAssetName" type="text" value="Blender model" />
+        </label>
+        <label>Detailed prompt for Blender
+          <textarea id="blenderPrompt" rows="3" placeholder="Low-poly weathered harbor lighthouse, red and white bands, warm amber lantern"></textarea>
+        </label>
+        <button id="blenderPromptBtn">Create prompt job</button>
+      </div>
       <div id="blenderGenerateRow" hidden>
         <label>Prompt job → Blender 3.6
           <code id="blenderGenerateCode"></code>
