@@ -808,6 +808,17 @@
     Game.fpvMessageTimer = duration || 2.6;
   };
 
+  // The roach is an on-foot skin, but unlike other pedestrians it can use the
+  // first-person camera slot. Keep this check shared by the camera and cycling.
+  function isRoachPed() {
+    const ped = Game.vehicles && Game.vehicles.pedestrian;
+    return Game.activeKey === 'pedestrian' && !!ped &&
+      (Game.pedSkin === 'roach' || ped.downloadedKey === 'roach');
+  }
+
+  // `fpvActive` now means the goggles are on (first-person camera), not merely
+  // that the quad is equipped. In chase/orbit the airframe stays visible and
+  // the normal HUD returns; in first person the telemetry overlay takes over.
   function setFpvMode(on, drone) {
     Game.fpvActive = !!on;
     if (Game.fpvActive) Game.lastFpvHudDraw = -1;
@@ -817,11 +828,15 @@
     if (overlay) overlay.classList.toggle('hidden', !Game.fpvActive);
     if (drone && drone.isFpv) {
       if (Game.fpvActive) {
-        // The quad is visible for a fraction of a second after launch, then
-        // FpvDrone.endSpawnFlash() hides it so it cannot block the camera.
+        // The quad is visible for a fraction of a second after switching to
+        // goggles, then FpvDrone.endSpawnFlash() hides it from the camera.
         if (!drone.spawnFlash) drone.setVisible(false);
+      } else if (Game.activeKey === drone.key) {
+        // Third-person view needs the airframe on screen again.
+        drone.setVisible(true);
       } else {
-        drone.spawnFlash = 0;
+        // Goggles off while another vehicle is equipped: keep the parked quad
+        // out of the scene (the pilot is back at the launch point).
         drone.setVisible(false);
       }
     }
@@ -837,12 +852,11 @@
   // Leaving the goggles puts the player back in whatever they were driving or
   // walking when FPV was chosen, at the exact same coordinates.
   function exitFpv() {
-    if (!Game.fpvActive) return;
     const drone = Game.vehicles.fpv;
-    if (drone) {
-      drone.spawnFlash = 0;
-      drone.setVisible(false);
-    }
+    if (Game.activeKey !== 'fpv' || !drone) return;
+    setFpvMode(false, drone);
+    drone.spawnFlash = 0;
+    drone.setVisible(false);
     const pilot = Game.fpvPilot;
     const key = pilot && Game.vehicles[pilot.key] ? pilot.key : 'pedestrian';
     const pose = pilot
@@ -1193,7 +1207,7 @@
 
   function toggleOnFoot() {
     if (Game.ride) { Game.showMessage('Enjoy the ride — you get off at the station', 1.8); return; }
-    if (Game.fpvActive) { exitFpv(); return; }
+    if (Game.activeKey === 'fpv') { exitFpv(); return; }
     if (CC.InteriorSystem && CC.InteriorSystem.current) {
       CC.InteriorSystem.exit(Game.vehicles.pedestrian);
       return;
@@ -1248,20 +1262,21 @@
   Game.toggleOnFoot = toggleOnFoot;
 
   // Camera cycling for keyboard and gamepad. On foot the Hood view would put
-  // the lens inside the baked redneck model, so skip it while walking.
+  // the lens inside the baked redneck model, so skip it except for the roach.
+  // The drone uses that same first-person slot for its telemetry goggles.
   function cycleCamera() {
     const active = Game.vehicles[Game.activeKey];
-    // The drone has one view: first-person goggles with telemetry. Camera
-    // cycling must never imply a chase or hood mode while it is equipped.
-    if (active && active.isFpv && Game.fpvActive) return;
     let nextMode = (Game.camMode + 1) % Game.camModes.length;
-    if (active && active.isPedestrian && nextMode === 1) {
+    if (active && active.isPedestrian && nextMode === 1 && !isRoachPed()) {
       nextMode = (nextMode + 1) % Game.camModes.length;
     }
     Game.camMode = nextMode;
+    if (active && active.isFpv) setFpvMode(nextMode === 1, active);
+    const label = active && active.isFpv && nextMode === 1
+      ? 'FPV' : Game.camModes[nextMode];
     const camEl = $('camMode');
-    if (camEl) camEl.textContent = Game.camModes[nextMode];
-    toast('Camera: ' + Game.camModes[nextMode], 1.4);
+    if (camEl) camEl.textContent = label;
+    toast('Camera: ' + label, 1.4);
   }
 
   function updateMusicButton() {
@@ -1272,6 +1287,17 @@
     const label = 'Music volume · ' + pct + '%';
     btn.dataset.label = label;
     btn.setAttribute('aria-label', label);
+    const toggle = $('musicToggleBtn');
+    if (toggle) {
+      const on = !!Audio.musicOn;
+      toggle.classList.toggle('off', !on);
+      const toggleLabel = on ? 'Music on — click to turn off' : 'Music off — click to turn on';
+      toggle.dataset.label = toggleLabel;
+      toggle.setAttribute('aria-label', toggleLabel);
+      toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const glyph = toggle.querySelector('.musicToggleGlyph');
+      if (glyph) glyph.textContent = on ? '⏸' : '▶';
+    }
   }
 
   function updateRadioButton() {
@@ -1430,7 +1456,7 @@
     if (!Game.started) return;
 
     if (CC.InteriorSystem && CC.InteriorSystem.current) CC.InteriorSystem.leave();
-    if (Game.fpvActive) exitFpv();
+    if (Game.activeKey === 'fpv') exitFpv();
     if (Game.mapOpen) toggleFullMap(false);
     if (Game.safeHouse) {
       Game.safeHouse = null;
@@ -1472,7 +1498,7 @@
       const k = e.key.toLowerCase();
       if (k === 'escape') {
         if (Game.mapOpen) { toggleFullMap(false); return; }
-        if (Game.fpvActive) { exitFpv(); return; }
+        if (Game.activeKey === 'fpv') { exitFpv(); return; }
         if (CC.InteriorSystem && CC.InteriorSystem.current) { CC.InteriorSystem.leave(); return; }
         const settings = $('settings');
         if (settings && !settings.classList.contains('hidden')) { toggleSettings(false); return; }
@@ -1593,6 +1619,13 @@
         }
       }
       musicBtn.blur();
+    });
+    const musicToggleBtn = $('musicToggleBtn');
+    if (musicToggleBtn) musicToggleBtn.addEventListener('click', function () {
+      Audio.init();
+      closeVolumePopup();
+      Audio.toggleMusic();
+      musicToggleBtn.blur();
     });
     const quickMusicVol = $('quickMusicVol');
     if (quickMusicVol) {
@@ -1906,7 +1939,9 @@
     // chase view, so the car or redneck stays on screen instead of vanishing
     // behind a hood cam. On foot this is forced even when re-selecting the
     // pedestrian, so a stale Hood/FPV mode can never hide the character.
-    if (next.isPedestrian || (!next.isAircraft && old !== next)) Game.camMode = 0;
+    if (next.isPedestrian || (!next.isAircraft && old !== next) || (next.isFpv && old !== next)) {
+      Game.camMode = 0;
+    }
     Game.activeKey = key;
     Game.activeAircraftSpawn = next.isAircraft ? usedSpawn : null;
     showAirportDisplays(Game.activeAircraftSpawn);
@@ -1914,8 +1949,10 @@
       Game.fpvPilot = fpvLaunch || Game.fpvPilot;
       next.newSortie();
       next.beginSpawnFlash();
-      setFpvMode(true, next);
-      Game.fpvMessage('FPV LAUNCHED FROM PILOT — ' + next.name, 2.8);
+      // Equipping the quad starts in third person. Press C for the goggles;
+      // the telemetry overlay only appears in that first-person view.
+      setFpvMode(false, next);
+      Game.fpvMessage('FPV READY — ' + next.name + ' · C FOR GOGGLES', 2.8);
     } else {
       if (old && old.isFpv) {
         old.spawnFlash = 0;
@@ -2044,6 +2081,9 @@
     const wanted = key && key !== 'default' ? key : 'default';
     const quiet = announce === false;
     Game.pedSkin = wanted;
+    // Selecting the roach starts in third person, like a newly chosen vehicle;
+    // C can then switch it to first person.
+    if (wanted === 'roach') Game.camMode = 0;
     const ped = Game.vehicles && Game.vehicles.pedestrian;
     if (!ped || !ped.setSkin) return Promise.resolve(null);
     return ped.setSkin(wanted).then(function (rig) {
@@ -2195,13 +2235,13 @@
     const ped = !!v.isPedestrian;
     const flying = !!v.isAircraft;
     // Defensive: an old Hood or FPV setting must never hide the on-foot
-    // character. Every pedestrian entry resets to Chase, but this also covers
-    // gamepad state or a direct camMode/fpvActive change.
+    // character. Ordinary pedestrian entries reset to Chase, but this also
+    // covers gamepad state or a direct camMode/fpvActive change.
     if (ped) {
-      // On foot is always a third-person view. Any stale Hood, Cinematic or
-      // FPV setting would otherwise hide the redneck and leave only a
-      // first-person/FPV picture, so force Chase before the camera is placed.
-      if (Game.camMode !== 0) {
+      // Ordinary on-foot bodies stay third person: a stale Hood view would put
+      // the lens inside the baked model. The roach is the exception and uses
+      // the first-person slot like other vehicles.
+      if (Game.camMode !== 0 && !(Game.camMode === 1 && isRoachPed())) {
         Game.camMode = 0;
         const camEl = $('camMode');
         if (camEl) camEl.textContent = Game.camModes[Game.camMode];
@@ -2212,8 +2252,8 @@
         Game.fpvPilot = null;
       }
     }
-    if (v.isFpv && Game.activeKey === v.key) {
-      // Forward windshield-style view with the telemetry overlay on top. The
+    if (v.isFpv && Game.activeKey === v.key && Game.camMode === 1) {
+      // First-person goggles: forward view with the telemetry overlay on top. The
       // camera sits just ahead of the quad and looks along its heading, with a
       // little nose pitch but no camera roll; drone roll lives on the HUD ball.
       const ahead = 0.9;
