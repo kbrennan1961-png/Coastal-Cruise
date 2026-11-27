@@ -167,8 +167,6 @@ html, body {
 .vehBtn:active { transform: translateY(1px); }
 .vehBtn.active { background: rgba(255, 209, 102, 0.22); border-color: #ffd166; }
 .vehBtn.active b { color: #ffd166; }
-.skinHead { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 8px; }
-.skinList { grid-template-columns: repeat(3, 1fr); }
 .smallRow {
   display: flex;
   justify-content: space-between;

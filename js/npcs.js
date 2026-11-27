@@ -4441,7 +4441,10 @@
         const eligible = this.pedestrians.filter(function (p) {
           return !p.inVehicle && p.role !== 'cop' && p.role !== 'gang' && p.role !== 'dog';
         });
-        const count = Math.min(DL.keys.length, eligible.length);
+        // Each baked rig owns dozens of skinned meshes. Keep a small, varied
+        // sample instead of one per key: the procedural townsfolk still fill
+        // the world, and the renderer no longer pays thousands of skinned draws.
+        const count = Math.min(DL.keys.length, eligible.length, 4);
         for (let i = 0; i < count; i++) {
           const ped = eligible[Math.floor((i + 0.5) * eligible.length / count)];
           const key = DL.keys[i % DL.keys.length];
@@ -4454,7 +4457,7 @@
       // roadside lots. They opt in to the baked animated "giant cockroach" GLB
       // so the town feels alive without touching ordinary townsfolk.
       NPCSystem.roaches = [];
-      const roachCount = DL && DL.creatureKeys && DL.creatureKeys.indexOf('roach') >= 0 ? 8 : 0;
+      const roachCount = DL && DL.creatureKeys && DL.creatureKeys.indexOf('roach') >= 0 ? 4 : 0;
       // Giant, easy-to-spot pests. The old 0.9 scale at 80+ units away made
       // them effectively invisible to a player just starting on the road.
       const ROACH_SCALE = 2;

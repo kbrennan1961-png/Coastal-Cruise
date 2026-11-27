@@ -131,10 +131,94 @@
   }
 
   /* ---------- detailed low-poly character ---------- */
+  // Every character used to allocate its own six or seven materials. Hundreds
+  // of townsfolk and ride riders meant thousands of unique materials, which
+  // shows up as shader/uniform churn in the renderer. Share by colour instead.
+  const characterMatCache = Object.create(null);
+  function sharedCharacterMat(color) {
+    const hex = (color && color.isColor ? color.getHex() : Number(color)) >>> 0;
+    let material = characterMatCache[hex];
+    if (!material) {
+      material = new THREE.MeshLambertMaterial({ color: hex, flatShading: true });
+      characterMatCache[hex] = material;
+    }
+    return material;
+  }
+
+  // Static riders (ferris wheel, coaster, carousel) never animate their arms
+  // or legs. Collapse their parts by material so each rider costs a handful of
+  // draw calls instead of twenty-something, while keeping the group transform
+  // that the ride animates.
+  function mergeStaticCharacter(group) {
+    if (!group || !group.children.length) return;
+    group.updateMatrixWorld(true);
+    const inverse = new THREE.Matrix4().copy(group.matrixWorld).invert();
+    const buckets = new Map();
+    group.traverse(function (object) {
+      if (!object.isMesh || object.isSkinnedMesh || Array.isArray(object.material)) return;
+      const geo = object.geometry;
+      if (!geo || !geo.attributes.position || !geo.attributes.normal || !geo.attributes.uv) return;
+      if (!object.material || object.material.transparent || object.material.isShaderMaterial) return;
+      let items = buckets.get(object.material);
+      if (!items) {
+        items = [];
+        buckets.set(object.material, items);
+      }
+      items.push({
+        mesh: object,
+        matrix: new THREE.Matrix4().multiplyMatrices(inverse, object.matrixWorld)
+      });
+    });
+    buckets.forEach(function (items, material) {
+      if (items.length < 2) return;
+      let count = 0;
+      const parts = items.map(function (item) {
+        const source = item.mesh.geometry;
+        const geo = source.index ? source.toNonIndexed() : source;
+        count += geo.attributes.position.count;
+        return { geo: geo, source: source, matrix: item.matrix };
+      });
+      const position = new Float32Array(count * 3);
+      const normal = new Float32Array(count * 3);
+      const uv = new Float32Array(count * 2);
+      const normalMatrix = new THREE.Matrix3();
+      const v = new THREE.Vector3();
+      let offset = 0;
+      parts.forEach(function (part) {
+        const pa = part.geo.attributes.position.array;
+        const na = part.geo.attributes.normal.array;
+        const ua = part.geo.attributes.uv.array;
+        normalMatrix.getNormalMatrix(part.matrix);
+        for (let i = 0; i < part.geo.attributes.position.count; i++) {
+          const s3 = i * 3, d3 = (offset + i) * 3, d2 = (offset + i) * 2;
+          v.set(pa[s3], pa[s3 + 1], pa[s3 + 2]).applyMatrix4(part.matrix);
+          position[d3] = v.x; position[d3 + 1] = v.y; position[d3 + 2] = v.z;
+          v.set(na[s3], na[s3 + 1], na[s3 + 2]).applyMatrix3(normalMatrix).normalize();
+          normal[d3] = v.x; normal[d3 + 1] = v.y; normal[d3 + 2] = v.z;
+          uv[d2] = ua[i * 2]; uv[d2 + 1] = ua[i * 2 + 1];
+        }
+        offset += part.geo.attributes.position.count;
+        if (part.geo !== part.source) part.geo.dispose();
+      });
+      const mergedGeo = new THREE.BufferGeometry();
+      mergedGeo.setAttribute('position', new THREE.BufferAttribute(position, 3));
+      mergedGeo.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+      mergedGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      mergedGeo.computeBoundingSphere();
+      const merged = new THREE.Mesh(mergedGeo, material);
+      merged.castShadow = items[0].mesh.castShadow;
+      merged.receiveShadow = items[0].mesh.receiveShadow;
+      group.add(merged);
+      items.forEach(function (item) {
+        if (item.mesh.parent) item.mesh.parent.remove(item.mesh);
+      });
+    });
+  }
+
   CC.CharacterFactory = {
     build(opts) {
       const o = opts || {};
-      const lam = function (c) { return new THREE.MeshLambertMaterial({ color: c, flatShading: true }); };
+      const lam = sharedCharacterMat;
       const skin = lam(o.skin || 0xe8bd96), shirt = lam(o.shirt || 0xf2b84b);
       const pants = lam(o.pants || 0x405466), shoes = lam(o.shoes || 0x37342f);
       const hair = lam(o.hair || 0x3b2c24), dark = lam(0x2b2c2e);
@@ -194,6 +278,8 @@
         brim.position.set(0, 2.01, 0.14); group.add(brim);
       }
       if (o.bag) group.add(box(0.45, 0.6, 0.26, lam(o.bag), 0, 1.19, -0.36));
+
+      if (o.mergeStatic) mergeStaticCharacter(group);
 
       const blob = CC.EnvironmentManager
         ? CC.EnvironmentManager.attachBlobShadow(group, 1.15, 0.028, 1.05) : null;

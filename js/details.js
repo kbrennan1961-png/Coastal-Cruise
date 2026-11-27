@@ -2437,13 +2437,20 @@
     Details.foodVendors++;
   }
   const rideBulbCache = {};
+  const BULB_PHASE_STEPS = 12;
   function rideBulbMat(color, phase) {
-    const key = color + '|' + phase;
+    // The original continuous phase made a separate material for every bulb.
+    // Twelve chase slots per colour keep the same travelling-light effect with
+    // a fixed, tiny material set (the renderer no longer recompiles for each).
+    const step = (Math.PI * 2) / BULB_PHASE_STEPS;
+    const phaseKey = Math.round((((phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / step) % BULB_PHASE_STEPS;
+    const quantised = phaseKey * step;
+    const key = color + '|' + phaseKey;
     if (!rideBulbCache[key]) {
       const m = mat(color, { emissive: color, emissiveIntensity: 0.7 });
       m.name = 'rideBulb' + key;
       rideBulbCache[key] = m;
-      Details.rideBulbMats.push({ mat: m, phase: phase });
+      Details.rideBulbMats.push({ mat: m, phase: quantised });
     }
     return rideBulbCache[key];
   }
@@ -2459,7 +2466,8 @@
       skin: U.pick(rng, [0xe8bd96, 0xd39b72, 0xb87a54, 0xf0c9a0]),
       shirt: U.pick(rng, [0xe45745, 0x4e9bd0, 0xe7b84d, 0x62a878, 0xb06fc0]),
       pants: U.pick(rng, [0x3f4a5a, 0x5b5147, 0x2e3944]),
-      hair: U.pick(rng, [0x3b2c24, 0x1f1b18, 0x7a4b2a])
+      hair: U.pick(rng, [0x3b2c24, 0x1f1b18, 0x7a4b2a]),
+      mergeStatic: true
     }).group;
     figure.scale.setScalar(scale || 0.55);
     figure.position.set(x, y, z);
@@ -2809,6 +2817,7 @@
     Details.rideSeats.carousel.length = 0;
     Details.coasterPhase = 0;
     Details.rideBulbMats.length = 0;
+    for (const bulbKey in rideBulbCache) delete rideBulbCache[bulbKey];
     Details.carouselHorses.length = 0;
     Details.ferrisRiders.length = 0;
     Details.coasterRiders.length = 0;

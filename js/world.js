@@ -1695,8 +1695,10 @@
     World.time = time;
     World._detailsTimer -= dt;
     if (CC.Details && World._detailsTimer <= 0) {
-      CC.Details.update(Math.min(0.1, 0.05 - World._detailsTimer), time);
-      World._detailsTimer = 0.05;
+      // Sine-driven signs, bulbs and animals do not need 20 Hz. Halving the
+      // sweep cuts renderer-side material churn without visible change.
+      CC.Details.update(Math.min(0.1, 0.1 - World._detailsTimer), time);
+      World._detailsTimer = 0.1;
     }
     if (CC.RetroWater) CC.RetroWater.updateRetroWater(dt, time);
     if (World.channelBuoysAnim) {

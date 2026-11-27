@@ -690,9 +690,8 @@
     vehicles: {},
     activeKey: 'coupe',
     lastVehicle: 'pedestrian',
-    // The on-foot body now ships as the baked redneck character. Classic and
-    // roach remain available from the vehicle menu.
-    pedSkin: 'redneck',
+    // The playable on-foot body is always the classic procedural pedestrian.
+    pedSkin: 'default',
     started: false,
     bootMessage: '',
     freeRoam: false,
@@ -848,9 +847,9 @@
     Game.fpvMessageTimer = duration || 2.6;
   };
 
-  // Every on-foot skin — redneck, roach and classic — is third-person only.
-  // Keep this check shared by spawning, camera cycling and the per-frame camera
-  // so no path can drop the lens inside a baked model or start a skin in FPV.
+  // The playable pedestrian is always third-person. Keep this check shared by
+  // spawning, camera cycling and the per-frame camera so no path can start the
+  // on-foot body in first person; FPV belongs to the drone only.
   function isThirdPersonOnlyPed() {
     const ped = Game.vehicles && Game.vehicles.pedestrian;
     return Game.activeKey === 'pedestrian' && !!ped && !!ped.isPedestrian;
@@ -1309,9 +1308,8 @@
   }
   Game.toggleOnFoot = toggleOnFoot;
 
-  // Camera cycling for keyboard and gamepad. On-foot bodies are always third
-  // person: the redneck/roach models would put the lens inside themselves in
-  // Hood view. The drone keeps the first-person slot for its goggles.
+  // Camera cycling for keyboard and gamepad. The playable pedestrian is always
+  // third person; the drone keeps the first-person slot for its goggles.
   function cycleCamera() {
     const active = Game.vehicles[Game.activeKey];
     if (isThirdPersonOnlyPed()) {
@@ -1618,20 +1616,10 @@
     window.addEventListener('keyup', function (e) { Game.keys[e.key.toLowerCase()] = false; });
     window.addEventListener('pointerdown', function () { Audio.init(); });
     window.addEventListener('blur', function () { Game.keys = {}; });
-    document.querySelectorAll('.vehBtn:not(.skinBtn)').forEach(function (btn) {
+    document.querySelectorAll('.vehBtn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         Audio.init();
         if (btn.dataset.key !== Game.activeKey) selectVehicle(btn.dataset.key);
-        const panel = $('vehiclePanel');
-        if (panel) panel.classList.add('hidden');
-        btn.blur();
-      });
-    });
-    document.querySelectorAll('.skinBtn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        Audio.init();
-        if (Game.activeKey !== 'pedestrian' && !selectVehicle('pedestrian')) return;
-        setPedestrianSkin(btn.dataset.skin);
         const panel = $('vehiclePanel');
         if (panel) panel.classList.add('hidden');
         btn.blur();
@@ -1974,7 +1962,7 @@
     }
     next.setVisible(true);
     // Entering a ground vehicle or stepping back onto foot returns to the
-    // chase view, so the car or redneck stays on screen instead of vanishing
+    // chase view, so the car or pedestrian stays on screen instead of vanishing
     // behind a hood cam. On foot this is forced even when re-selecting the
     // pedestrian, so a stale Hood/FPV mode can never hide the character.
     if (next.isPedestrian || (!next.isAircraft && old !== next) || (next.isFpv && old !== next)) {
@@ -2000,8 +1988,8 @@
       if (!fpvLaunch) Game.fpvPilot = null;
       setFpvMode(false, null);
     }
-    // Leaving the goggles snaps the camera back behind the redneck instead of
-    // drifting from the drone's last position and looking past the model.
+    // Leaving the goggles snaps the camera back behind the pedestrian instead
+    // of drifting from the drone's last position and looking past the model.
     if (next.isPedestrian) {
       setFpvMode(false, Game.vehicles.fpv);
       Game.fpvPilot = null;
@@ -2045,7 +2033,6 @@
   };
 
   Game.selectVehicle = selectVehicle;
-  Game.setPedestrianSkin = setPedestrianSkin;
   Game.exitFpv = exitFpv;
 
   Game.horn = function () {
@@ -2105,33 +2092,8 @@
     const v = Game.vehicles[Game.activeKey];
     $('vehicleName').textContent = v.spec.label;
     $('vehicleDesc').textContent = v.spec.desc;
-    document.querySelectorAll('.vehBtn:not(.skinBtn)').forEach(function (b) {
+    document.querySelectorAll('.vehBtn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.key === Game.activeKey);
-    });
-    document.querySelectorAll('.skinBtn').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.skin === (Game.pedSkin || 'default'));
-    });
-  }
-
-  // Swapping the on-foot body keeps activeKey === 'pedestrian', so every
-  // existing on-foot rule (rescue, safe houses, crimes, swimming) still works.
-  function setPedestrianSkin(key, announce) {
-    const wanted = key && key !== 'default' ? key : 'default';
-    const quiet = announce === false;
-    Game.pedSkin = wanted;
-    // Redneck and roach (and the classic body) always start in third person.
-    // Clear any stale first-person mode before the new skin becomes active.
-    if (Game.activeKey === 'pedestrian') forceThirdPersonCamera();
-    const ped = Game.vehicles && Game.vehicles.pedestrian;
-    if (!ped || !ped.setSkin) return Promise.resolve(null);
-    return ped.setSkin(wanted).then(function (rig) {
-      updateVehicleHud();
-      if (!quiet) {
-        if (wanted === 'default') toast('On foot: classic pedestrian', 2);
-        else if (rig) toast('On foot: ' + (CC.DownloadedCharacterLoader.label(wanted) || wanted), 2.2);
-        else toast('That character could not be loaded', 2.4);
-      }
-      return rig;
     });
   }
 
@@ -2761,8 +2723,8 @@
     const w = c.width, h = c.height, cx = w / 2, cy = h / 2;
     g.clearRect(0, 0, w, h);
 
-    // Artificial horizon. High-contrast blue/brown ball, numbered pitch ladder
-    // and a roll scale — all driven live by the drone's pitch and roll.
+    // Artificial horizon linework only. No tinted sky/ground mask: the camera
+    // image stays visible and the pitch ladder/roll scale sit cleanly on top.
     const pitch = U.clamp(v.pitch || 0, -1.4, 1.4);
     const roll = U.clamp(v.roll || 0, -1.4, 1.4);
     const horizonY = -pitch * h * 0.36;
@@ -2770,18 +2732,6 @@
     g.save();
     g.translate(cx, cy);
     g.rotate(-roll);
-    g.beginPath(); g.rect(-far, -far, far * 2, far * 2); g.clip();
-
-    const sky = g.createLinearGradient(0, -h * 0.7, 0, horizonY);
-    sky.addColorStop(0, 'rgba(18, 86, 140, 0.88)');
-    sky.addColorStop(1, 'rgba(78, 178, 220, 0.66)');
-    g.fillStyle = sky;
-    g.fillRect(-far, -far, far * 2, horizonY + far);
-    const ground = g.createLinearGradient(0, horizonY, 0, h * 0.7);
-    ground.addColorStop(0, 'rgba(140, 96, 42, 0.84)');
-    ground.addColorStop(1, 'rgba(58, 38, 16, 0.92)');
-    g.fillStyle = ground;
-    g.fillRect(-far, horizonY, far * 2, far * 2);
 
     g.strokeStyle = 'rgba(232, 255, 244, 0.98)';
     g.lineWidth = 3;
@@ -3113,17 +3063,35 @@
 
   function rebuildRoute() {
     const v = Game.vehicles[Game.activeKey];
-    if (!v || !Game.waypoint) { Game.route = []; Game.routeDistance = 0; updateNavInfo(v); return; }
+    if (!v || !Game.waypoint) {
+      Game.route = []; Game.routeDistance = 0; Game.routeAnchor = null;
+      updateNavInfo(v); return;
+    }
     // Aircraft fly direct. Roads, bridges and street weights are irrelevant in
     // the air, and curving the guide around them sends pilots the wrong way.
     const useDirect = v.isAircraft || Game.waypointMode === 'straight';
+    // A parked or slowly moving player does not need a new Dijkstra run every
+    // half second. The route only changes meaningfully after a couple of metres
+    // of movement, so reuse the last result until then (max one second).
+    const anchor = Game.routeAnchor;
+    if (anchor && Game.time - anchor.time < 1 &&
+        U.distance2D(v.pos.x, v.pos.z, anchor.x, anchor.z) < 2 &&
+        U.distance2D(Game.waypoint.x, Game.waypoint.z, anchor.wx, anchor.wz) < 1) {
+      Game.routeTimer = 1;
+      return;
+    }
     const result = useDirect ? {
       distance: U.distance2D(v.pos.x, v.pos.z, Game.waypoint.x, Game.waypoint.z),
       points: [{ x: v.pos.x, z: v.pos.z }, { x: Game.waypoint.x, z: Game.waypoint.z }]
     } : computeRoute(v.pos, Game.waypoint);
     Game.route = result.points;
     Game.routeDistance = result.distance;
-    Game.routeTimer = 0.5;
+    Game.routeAnchor = {
+      x: v.pos.x, z: v.pos.z,
+      wx: Game.waypoint.x, wz: Game.waypoint.z,
+      time: Game.time
+    };
+    Game.routeTimer = 1;
     updateNavInfo(v);
   }
 
@@ -4040,7 +4008,7 @@
       Game.frameAvg = Game.frameAvg ? Game.frameAvg * 0.92 + rawDt * 0.08 : rawDt;
       Game.resCooldown = (Game.resCooldown || 0) - dt;
       if (Game.resCooldown <= 0) {
-        Game.resCooldown = 0.75;
+        Game.resCooldown = 2;
         if (!Game.renderer) return;
         const ratio = Game.renderer.getPixelRatio();
         let next = ratio;
@@ -4048,10 +4016,10 @@
         else if (Game.frameAvg < 0.0135 && ratio < Game.basePixelRatio) {
           next = Math.min(Game.basePixelRatio, ratio + 0.05);
         }
-        if (next !== ratio) {
-          Game.renderer.setPixelRatio(next);
-          Game.renderer.setSize(window.innerWidth, window.innerHeight, false);
-        }
+        // setPixelRatio already resizes the drawing buffer in Three r160.
+        // Calling setSize again forces a second GPU allocation in the same
+        // frame, which is a reliable source of short lockups.
+        if (next !== ratio) Game.renderer.setPixelRatio(next);
       }
     }
     if (renderWorld && CC.Drawbridges) CC.Drawbridges.update(dt, Game.time);
@@ -4286,11 +4254,6 @@
       if (loading) loading.classList.add('hidden');
       stage('scene');
       initScene();
-      // Apply the default on-foot body quietly during boot so the player
-      // becomes the redneck as soon as they step out of the starting car.
-      if (Game.pedSkin && Game.pedSkin !== 'default') {
-        setPedestrianSkin(Game.pedSkin, false);
-      }
       stage('hud');
       applySplashMedia();
       updateVehicleHud();

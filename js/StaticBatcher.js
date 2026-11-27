@@ -205,7 +205,8 @@
       const dx = bs.center.x - playerPos.x;
       const dz = bs.center.z - playerPos.z;
       const rr = r + bs.radius;
-      m.visible = (dx * dx + dz * dz) < rr * rr;
+      const visible = (dx * dx + dz * dz) < rr * rr;
+      if (m.visible !== visible) m.visible = visible;
     }
   };
 })();

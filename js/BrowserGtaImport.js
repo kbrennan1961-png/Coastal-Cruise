@@ -60,10 +60,16 @@
   }
 
   function base64(bytes) {
+    // Float32Array/Uint16Array/Uint32Array values are not all Latin-1 code
+    // points, so feeding them straight to fromCharCode/btoa throws. Encode the
+    // underlying bytes instead; AssetLoader.decode rebuilds the typed view.
+    const u8 = bytes && bytes.buffer
+      ? new Uint8Array(bytes.buffer, bytes.byteOffset || 0, bytes.byteLength)
+      : new Uint8Array(bytes || []);
     const step = 0x8000;
     let out = '';
-    for (let i = 0; i < bytes.length; i += step) {
-      out += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+    for (let i = 0; i < u8.length; i += step) {
+      out += String.fromCharCode.apply(null, u8.subarray(i, i + step));
     }
     return btoa(out);
   }
@@ -220,7 +226,11 @@
     nodes.forEach(function (_, i) { if (!world[i]) visit(i, identity); });
 
     const category = categoryOf(label);
-    const key = uniqueKey('gta_' + category + '_' + slug(label), models);
+    // uniqueKey marks keys with `true`. Never pass the real model registry:
+    // a failed bake would leave a boolean where a model record belongs.
+    const usedKeys = {};
+    Object.keys(models).forEach(function (existing) { usedKeys[existing] = true; });
+    const key = uniqueKey('gta_' + category + '_' + slug(label), usedKeys);
     const groups = {};
     const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
 

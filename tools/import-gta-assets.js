@@ -484,7 +484,9 @@ function writeRegistry(options, textures, models, assets) {
       version: 1,
       generated: index.generated,
       categories: CATEGORIES,
-      assets: assets
+      assets: assets,
+      models: models,
+      textures: textures
     }) + ';\n})();\n';
 
   fs.mkdirSync(path.dirname(path.resolve(options.out)), { recursive: true });
