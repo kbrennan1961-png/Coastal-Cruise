@@ -27,10 +27,10 @@ automatic rebuild and redeploy. The site is fully static; nginx serves the
 files from a Docker image that pulls the Git LFS media at build time. Netlify
 is no longer the active host. The Dockerfile uses GitHub's commit API as a
 cache buster so the source clone is rebuilt on every push. `nginx.conf` serves
-`index.html`, `map-editor.html`, `js/MapEditor.js`, `js/MapEdits.js` and
-`js/CommunityAssets.js` with `no-store`. **Apply to game** also rewrites the
-versioned page script URLs with a fresh `?v=` timestamp, so a road edit or
-editor fix cannot be hidden by a cached copy of the patch or editor script.
+`index.html`, `map-editor.html`, `style.css`, `js/MapEditor.js`, `js/MapEdits.js`
+and `js/CommunityAssets.js` with `no-store`. **Apply to game** also rewrites the
+versioned page asset URLs with a fresh `?v=` timestamp, so a road edit, editor
+fix or HUD layout change cannot be hidden by a cached copy.
 
 The radio MP3s in `audio/` are compressed to under 25 MB each. The repo uses
 Git LFS for `*.mp3`, so GitHub stores small pointer files and the Deplexo build

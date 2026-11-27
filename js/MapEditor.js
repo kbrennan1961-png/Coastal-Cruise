@@ -1514,15 +1514,21 @@
     }
   }
 
-  // Static hosts often cache JS for hours, so changing MapEdits.js alone can
-  // leave the game reading yesterday's roads, or leave the editor running an
-  // old prompt dialog. Rewrite all versioned page scripts with each apply.
+  // Static hosts often cache assets for hours, so changing MapEdits.js alone
+  // can leave the game reading yesterday's roads, or leave the editor running
+  // an old prompt dialog. Rewrite all versioned page assets with each apply.
   function cacheBustScriptUrls(text, version) {
-    return String(text).replace(
-      /(src=["'])js\/(MapEdits|CommunityAssets|MapEditor)\.js(?:\?v=[^"']*)?(["'])/g,
-      function (_match, open, name, close) {
-        return open + 'js/' + name + '.js?v=' + version + close;
-      });
+    return String(text)
+      .replace(
+        /(src=["'])js\/(MapEdits|CommunityAssets|MapEditor)\.js(?:\?v=[^"']*)?(["'])/g,
+        function (_match, open, name, close) {
+          return open + 'js/' + name + '.js?v=' + version + close;
+        })
+      .replace(
+        /(href=["'])style\.css(?:\?v=[^"']*)?(["'])/g,
+        function (_match, open, close) {
+          return open + 'style.css?v=' + version + close;
+        });
   }
 
   async function writeTextFile(dir, name, text) {

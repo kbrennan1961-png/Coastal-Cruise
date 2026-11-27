@@ -184,7 +184,7 @@ html, body {
 #gauge { display: block; }
 
 /* minimap */
-#minimapWrap { bottom: 82px; right: 18px; padding: 9px; pointer-events: auto; }
+#minimapWrap { top: 8px; left: 8px; bottom: auto; right: auto; padding: 7px; pointer-events: auto; z-index: 12; }
 #minimapWrap.collapsed #minimap { display: none; }
 #minimap { display: block; border-radius: 50%; image-rendering: auto; cursor: pointer; border: 2px solid rgba(159, 230, 255, 0.45); box-shadow: 0 0 18px rgba(98, 224, 255, 0.18); }
 .navInfo {
@@ -1226,7 +1226,7 @@ html, body {
   .vehList { grid-template-columns: repeat(3, 1fr); }
   #gaugeWrap { transform: scale(0.78); transform-origin: bottom left; }
   .moneyHud { left: 150px; bottom: 66px; padding: 0; font-size: 12px; }
-  #minimapWrap { transform: scale(0.78); transform-origin: bottom right; }
+  #minimapWrap { transform: scale(0.78); transform-origin: top left; }
   #help { width: 92vw; }
   #settings { width: 92vw; }
   .audioBar { bottom: 10px; gap: 5px; padding: 4px 6px; }
