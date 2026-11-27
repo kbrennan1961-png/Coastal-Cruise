@@ -1312,6 +1312,118 @@
       '})();\n';
   }
 
+  /* Direct-to-disk apply. Chrome/Edge can remember a project folder by storing
+     its FileSystemDirectoryHandle in IndexedDB. One picker on first use, then
+     Apply to game writes js/MapEdits.js with no save dialog. */
+  const PROJECT_DB = 'coastal-cruise-map-editor';
+  const PROJECT_STORE = 'settings';
+  const GAME_FOLDER_KEY = 'gameFolderHandle';
+
+  function openProjectDb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+      const req = indexedDB.open(PROJECT_DB, 1);
+      req.onupgradeneeded = function () {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(PROJECT_STORE)) db.createObjectStore(PROJECT_STORE);
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error || new Error('Could not open editor settings')); };
+    });
+  }
+
+  async function getProjectSetting(key) {
+    const db = await openProjectDb();
+    try {
+      return await new Promise(function (resolve, reject) {
+        const req = db.transaction(PROJECT_STORE, 'readonly').objectStore(PROJECT_STORE).get(key);
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function setProjectSetting(key, value) {
+    const db = await openProjectDb();
+    try {
+      await new Promise(function (resolve, reject) {
+        const tx = db.transaction(PROJECT_STORE, 'readwrite');
+        tx.objectStore(PROJECT_STORE).put(value, key);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  async function ensureWritePermission(handle) {
+    if (!handle) return false;
+    if (!handle.queryPermission) return true;
+    const opts = { mode: 'readwrite' };
+    let permission = await handle.queryPermission(opts);
+    if (permission === 'granted') return true;
+    if (permission === 'prompt' && handle.requestPermission) {
+      permission = await handle.requestPermission(opts);
+    }
+    return permission === 'granted';
+  }
+
+  async function chooseGameFolder() {
+    if (!window.showDirectoryPicker) {
+      setMessage('Direct write is not available in this browser — MapEdits.js will be downloaded.');
+      return null;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({
+        id: 'coastal-cruise-game-folder',
+        mode: 'readwrite'
+      });
+      let hasIndex = false;
+      try {
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file' && entry.name === 'index.html') { hasIndex = true; break; }
+        }
+      } catch (e) { /* Some browsers hide directory iteration until permission is granted. */ }
+      if (!hasIndex) {
+        setMessage('Choose the Coastal Cruise folder that contains index.html, then try again.');
+        return null;
+      }
+      await setProjectSetting(GAME_FOLDER_KEY, handle);
+      setMessage('Game folder connected: ' + handle.name + '. Apply to game will write there from now on.');
+      return handle;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return null;
+      setMessage('Could not connect that folder: ' + String((e && e.message) || e));
+      return null;
+    }
+  }
+
+  async function applyPatchToGame() {
+    if (!window.showDirectoryPicker) return false;
+    let handle = null;
+    try { handle = await getProjectSetting(GAME_FOLDER_KEY); } catch (e) { handle = null; }
+    if (handle && !(await ensureWritePermission(handle))) handle = null;
+    if (!handle) handle = await chooseGameFolder();
+    if (!handle) return false;
+    try {
+      const jsDir = await handle.getDirectoryHandle('js', { create: true });
+      const fileHandle = await jsDir.getFileHandle('MapEdits.js', { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(patchText());
+      await writable.close();
+      setMessage('Applied to game map: js/MapEdits.js in “' + handle.name +
+        '”. Hard-refresh index.html to play it.');
+      return true;
+    } catch (e) {
+      setMessage('Direct write failed (' + String((e && e.message) || e) +
+        ') — falling back to download.');
+      return false;
+    }
+  }
+
   async function savePatch() {
     const text = patchText();
     if (window.showSaveFilePicker) {
@@ -1386,7 +1498,7 @@
       btn.title = 'Write a standalone game project for ' + (state.gameName || 'this map');
     } else {
       btn.innerHTML = '✔ <span>Apply to game</span>';
-      btn.title = 'Export the patch the game will load';
+      btn.title = 'Write the patch directly to js/MapEdits.js in the game folder';
     }
     const menuItem = document.querySelector('#menuBar .menuItem[data-target="#applyBtn"]');
     if (menuItem && menuItem.childNodes[0] && menuItem.childNodes[0].nodeType === 3) {
@@ -3161,8 +3273,13 @@
   $('assetName').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); submitAssetDialog(); }
   });
-  $('applyBtn').addEventListener('click', function () {
-    return state.standaloneGame ? saveGameProject() : savePatch();
+  $('applyBtn').addEventListener('click', async function () {
+    if (state.standaloneGame) return saveGameProject();
+    const applied = await applyPatchToGame();
+    if (!applied) return savePatch();
+  });
+  $('chooseGameFolderBtn').addEventListener('click', function () {
+    return chooseGameFolder();
   });
   $('copyBtn').addEventListener('click', copyPatch);
   $('resetBtn').addEventListener('click', function () {

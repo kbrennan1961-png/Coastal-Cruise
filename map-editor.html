@@ -25,6 +25,7 @@
         <button class="menuItem" data-target="#importBtn">Import data…</button>
         <div class="menuSep"></div>
         <button class="menuItem" data-target="#applyBtn">Apply to game <span class="shortcut">MapEdits.js</span></button>
+        <button class="menuItem" id="chooseGameFolderBtn">Change game folder…</button>
         <button class="menuItem" data-target="#copyBtn">Copy patch JS</button>
         <button class="menuItem" data-target="#newGameBtn">Create game folder…</button>
         <div class="menuSep"></div>
@@ -153,7 +154,7 @@
        windows. -->
   <div id="viewToggleDock">
     <button id="view2DBtn" class="toggle on" title="Toggle 2D editor / 3D preview (P)">▦ <span>2D / 3D</span></button>
-    <button id="applyBtn" class="primary" title="Export the patch the game will load">✔ <span>Apply to game</span></button>
+    <button id="applyBtn" class="primary" title="Write the patch directly to js/MapEdits.js in the game folder">✔ <span>Apply to game</span></button>
   </div>
 
   <main>
@@ -260,7 +261,7 @@
       <section class="help">
         <h2>HOW TO APPLY</h2>
         <p>The editor fills the browser window and has a native-style menu bar across the top. Every menu item runs the same command as its toolbar button; <b>Map Editor → Full screen</b> (or <b>F11</b>) enters true browser full screen. The 2D backdrop is the exact ground canvas used in-game, and roads, buildings, landmarks and coast rules come from the same runtime map data. <b>Reset</b> discards the current edit patch and reloads that game map.</p>
-        <p><b>Apply to game</b> downloads <code>MapEdits.js</code>. Save it over <code>js/MapEdits.js</code>, then hard-refresh <code>index.html</code>. The editor can also write the file directly if your browser supports it. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
+        <p><b>Apply to game</b> writes <code>js/MapEdits.js</code> straight into the game folder. The first time, choose the game folder; after that the editor remembers it. Use <b>File → Change game folder</b> to reconnect. Hard-refresh <code>index.html</code> to play the map. If your browser does not support direct write access, the editor falls back to downloading <code>MapEdits.js</code>. For a separate project, use <b>New game</b> and <b>Create game folder</b> — it writes a complete standalone copy of the engine with the new map baked in.</p>
         <p>Road tool: click to add points, double-click or press <b>Enter</b> to finish, <b>Esc</b> to cancel. Bridge tool: drag across the water — it adds a drivable road and a bridge deck. <b>Paint</b> (<b>W</b>) works like a Photoshop brush: drag to stamp trees or baked models; the Brush panel controls size, spacing, scatter and scale.</p>
         <p><b>2D / 3D</b> (or <b>P</b>) toggles the editor view. Use the <b>Pan</b> button beside the zoom controls (or <b>H</b> / middle-drag) to drag the map around when it is enlarged. The 3D preview renders the current map with the same baked models the game uses. Drag to orbit, right/middle/Shift+drag to pan, wheel to zoom, double-click to fit. Use <b>Game / Realistic</b> to switch between the in-game PS2 look and softer Blender/Unreal-style lighting, shadows and building facades. Use <b>View / Move / Rotate / Scale</b> (keys <b>1–4</b>) for Blender-like gizmo editing of the selected building, landmark or model. For exact Blender geometry, place a baked <b>Model</b> asset; plain <b>Building</b> entries are detailed facades generated from their map dimensions.</p>
         <p><b>Trailer</b> (<b>K</b>): click a start point, then a finish point. Ground vehicles are routed along roads when rendered; aircraft and jetpacks fly straight to the finish. Export the shot JSON and render one clip per shot with <code>npm run trailer -- --shots trailer-shots.json</code>.</p>
