@@ -20,14 +20,16 @@ Then visit <http://localhost:8080>. Either way is completely offline.
 
 ## Deployment
 
-The live game is hosted on **Netlify**, connected to
+The live game is hosted on **Deplexo** at
+<https://coastal-cruise.de.deplexo.com>, connected to
 `kbrennan1961-png/Coastal-Cruise` on GitHub. Pushes to `main` trigger an
-automatic rebuild and redeploy. The site is fully static; no runtime server or
-backend is required.
+automatic rebuild and redeploy. The site is fully static; nginx serves the
+files from a Docker image that pulls the Git LFS media at build time. Netlify
+is no longer the active host.
 
 The radio MP3s in `audio/` are compressed to under 25 MB each. The repo uses
-Git LFS for `*.mp3`, so GitHub stores small pointer files and LFS-aware builds
-fetch the real audio. See `audio/README.md` for bitrates and filenames.
+Git LFS for `*.mp3`, so GitHub stores small pointer files and the Deplexo build
+fetches the real audio. See `audio/README.md` for bitrates and filenames.
 
 This Mac does **not** push directly to GitHub. `origin` points to the bare repo
 on the mini PC (`obsidian-vault:git/Coastal-Cruise.git`), and the mini PC pushes
@@ -39,7 +41,7 @@ ssh obsidian-vault 'git -C ~/git/Coastal-Cruise-bridge pull origin main && git -
 ```
 
 The mini PC bridge clone has `origin` set to the local bare repo and
-`remote.pushDefault` set to `github`, so GitHub and Netlify only see pushes
+`remote.pushDefault` set to `github`, so GitHub and Deplexo only see pushes
 from the mini PC.
 
 ## Blender 3.6 asset workflow
