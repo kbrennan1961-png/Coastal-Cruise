@@ -16,13 +16,7 @@ FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=source /src/ /usr/share/nginx/html/
 
-RUN mkdir -p /tmp/nginx/client_body \
-             /tmp/nginx/proxy \
-             /tmp/nginx/fastcgi \
-             /tmp/nginx/uwsgi \
-             /tmp/nginx/scgi \
-             /var/cache/nginx \
-    && chown -R nginx:nginx /tmp/nginx /var/cache/nginx
+RUN mkdir -p /var/cache/nginx && chown -R nginx:nginx /var/cache/nginx
 
 USER nginx
 EXPOSE 3000
