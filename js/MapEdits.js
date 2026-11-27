@@ -5,7 +5,7 @@
   var CC = window.CC = window.CC || {};
   CC.mapEdits = {
   "version": 1,
-  "generated": "2026-11-27T18:07:46.411Z",
+  "generated": "2026-11-27T20:34:11.300Z",
   "active": true,
   "newMap": false,
   "standaloneGame": false,
@@ -466,28 +466,6 @@
         41.77319714841084
       ],
       "_length": 41.77319714841084
-    },
-    {
-      "name": "Park West Connector",
-      "type": "paved",
-      "width": 10,
-      "closed": false,
-      "points": [
-        [
-          88,
-          22
-        ],
-        [
-          88,
-          -41
-        ]
-      ],
-      "_index": 12,
-      "_cum": [
-        0,
-        63
-      ],
-      "_length": 63
     }
   ],
   "buildings": [

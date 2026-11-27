@@ -199,13 +199,8 @@
       name: 'Palm Connector', type: 'paved', width: 9, closed: false,
       points: [[245, 226], [286, 234]]
     });
-    // Connector requested: x88 z22 to x88 z-41.
-    if (!list.find(function (r) { return r && r.name === 'Park West Connector'; })) {
-      list.push({
-        name: 'Park West Connector', type: 'paved', width: 10, closed: false,
-        points: [[88, 22], [88, -41]]
-      });
-    }
+    // Park West Connector (x88 z22 -> x88 z-41) removed: it reads as a stray
+    // road beside the river/marsh near x108 z-19.
     // Single-lane turnaround loops at known NPC jam points.
     // Each road splits into two one-way paths that form a loop and return
     // traffic in the opposite direction. Cars cannot continuously circulate.
