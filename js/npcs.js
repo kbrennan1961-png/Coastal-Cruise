@@ -1271,7 +1271,8 @@
         ped.group.add(rig.group);
         ped.downloaded = rig;
         ped.downloadedKey = key;
-        if (rig.radius) ped.radius = rig.radius;
+        if (opts && opts.radius != null) ped.radius = opts.radius;
+        else if (rig.radius) ped.radius = rig.radius;
       }).catch(function (e) {
         // Keep the procedural pedestrian if the optional GLB loader is unavailable.
         if (CC.DownloadedCharacterLoader) {
@@ -4339,7 +4340,10 @@
       // so the town feels alive without touching ordinary townsfolk.
       NPCSystem.roaches = [];
       const roachCount = DL && DL.creatureKeys && DL.creatureKeys.indexOf('roach') >= 0 ? 8 : 0;
-      const ROACH_SCALE = 0.9;
+      // Giant, easy-to-spot pests. The old 0.9 scale at 80+ units away made
+      // them effectively invisible to a player just starting on the road.
+      const ROACH_SCALE = 2;
+      const ROACH_RADIUS = 1.4;
       const roachObstacles = CC.World.obstacles || [];
       const roachSpotClear = function (x, z) {
         for (let i = 0; i < roachObstacles.length; i++) {
@@ -4355,18 +4359,32 @@
           if (!roachSpotClear(candidate.x, candidate.z)) continue;
           const nr = CC.nearestRoad(candidate.x, candidate.z);
           if (nr && nr.dist > 22) continue;
-          // Half the roaches stay near the starting road so players meet them
-          // early; the rest scatter across the wider town.
-          if (i < roachCount / 2 &&
-              U.distance2D(candidate.x, candidate.z, -106, -35) > 110) continue;
+          // Half the roaches stay close to the starting road so players meet
+          // them early; the rest scatter across the wider town.
+          const fromStart = U.distance2D(candidate.x, candidate.z, -106, -35);
+          if (i < roachCount / 2 && (fromStart < 18 || fromStart > 70)) continue;
           spot = candidate;
+        }
+        // Very rarely the tight ring has no clear roadside land. Fall back to
+        // the old, wider ring before giving up and scattering anywhere.
+        if (!spot && i < roachCount / 2) {
+          for (let attempt = 0; attempt < 60 && !spot; attempt++) {
+            const candidate = findLandSpot(4);
+            if (!roachSpotClear(candidate.x, candidate.z)) continue;
+            const nr = CC.nearestRoad(candidate.x, candidate.z);
+            if (nr && nr.dist > 22) continue;
+            if (U.distance2D(candidate.x, candidate.z, -106, -35) > 110) continue;
+            spot = candidate;
+          }
         }
         if (!spot) spot = findLandSpot(4);
         const roach = new Pedestrian(scene, spot.x, spot.z, 'roach');
         roach.homeRadius = 8;
-        roach.radius = 1.1;
+        roach.radius = ROACH_RADIUS;
         roach.target.set(spot.x + U.randRange(rng, -4, 4), spot.z + U.randRange(rng, -4, 4));
-        roach.attachDownloaded('roach', { scale: ROACH_SCALE, moving: true, clip: 'Run' });
+        roach.attachDownloaded('roach', {
+          scale: ROACH_SCALE, radius: ROACH_RADIUS, moving: true, clip: 'Run'
+        });
         NPCSystem.pedestrians.push(roach);
         NPCSystem.roaches.push(roach);
       }

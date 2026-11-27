@@ -885,34 +885,23 @@
     Game.loadingMedia = null;
   }
 
+  // media/base_211.m4a is no longer used as intro music.
   function startIntroMusic() {
     const el = $('introMusic');
     if (!el) return;
-    if (!el.getAttribute('src')) el.src = 'media/base_211.m4a';
-    el.loop = true;
-    el.volume = loadingVolume();
-    try { if (el.paused) { const p = el.play(); if (p && p.catch) p.catch(function () {}); } } catch (err) { /* ignore */ }
+    try { el.pause(); } catch (err) { /* ignore */ }
   }
 
   // Automatic fullscreen on first gesture removed; use the FULL SCREEN button.
 
   function primeIntroMusicOnLoad() {
-    startIntroMusic();
-    const resume = function () {
-      startIntroMusic();
-      window.removeEventListener('pointerdown', resume);
-      window.removeEventListener('keydown', resume);
-      window.removeEventListener('touchstart', resume);
-    };
-    window.addEventListener('pointerdown', resume);
-    window.addEventListener('keydown', resume);
-    window.addEventListener('touchstart', resume);
+    // No splash music: the B&W town hold is silent until the radio starts.
   }
 
   function stopIntroMusic() {
     const el = $('introMusic');
     if (!el) return;
-    try { el.pause(); } catch (err) { /* ignore */ }
+    try { el.pause(); if (el.load) el.load(); } catch (err) { /* ignore */ }
   }
 
   // file:// safe: the chosen file becomes an in-memory object URL and is never
@@ -994,10 +983,10 @@
     if (startBtn) { startBtn.disabled = true; startBtn.style.display = 'none'; }
     const startArea = $('splashStartArea');
     if (startArea) startArea.style.display = 'none';
-    // Hide splash UI and show B&W loaded town while music plays, then auto-start.
+    // Hide splash UI and hold on the B&W loaded town for 5 seconds, then start.
     setSplashReady(true);
     clearAutoStart();
-    autoStartTimer = setTimeout(function () { finishStart(); }, 10000);
+    autoStartTimer = setTimeout(function () { finishStart(); }, 5000);
   }
 
   function finishStart() {
@@ -1012,10 +1001,10 @@
     stopIntroMusic();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     Audio.init();
-    // Start with Cruise 101 playing when spawning in a vehicle.
+    // Start on Playback FM.
     Audio.stopMusic();
-    const cruiseIdx = (CC.radioStationDefs || []).findIndex(function (s) { return /cruise 101/i.test(s.name); });
-    if (cruiseIdx >= 0) Audio.radio.index = cruiseIdx;
+    const playbackIdx = (CC.radioStationDefs || []).findIndex(function (s) { return /playback fm/i.test(s.name); });
+    if (playbackIdx >= 0) Audio.radio.index = playbackIdx;
     if (Audio.radioAllowed()) Audio.startMusic();
     updateAudioUI();
     updateWorldUI();
@@ -2209,7 +2198,14 @@
     // character. Every pedestrian entry resets to Chase, but this also covers
     // gamepad state or a direct camMode/fpvActive change.
     if (ped) {
-      if (Game.camMode === 1) Game.camMode = 0;
+      // On foot is always a third-person view. Any stale Hood, Cinematic or
+      // FPV setting would otherwise hide the redneck and leave only a
+      // first-person/FPV picture, so force Chase before the camera is placed.
+      if (Game.camMode !== 0) {
+        Game.camMode = 0;
+        const camEl = $('camMode');
+        if (camEl) camEl.textContent = Game.camModes[Game.camMode];
+      }
       if (Game.fpvActive) {
         const drone = Game.vehicles.fpv;
         setFpvMode(false, drone);
