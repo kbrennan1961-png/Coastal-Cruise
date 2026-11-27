@@ -1094,7 +1094,6 @@ html, body {
 }
 .iconBtn.off { color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.18); }
 .musicGlyph { font-size: 23px; line-height: 1; font-weight: 700; }
-.musicToggleGlyph { font-size: 18px; line-height: 1; font-weight: 800; }
 .iconSprite { width: 23px; height: 23px; object-fit: contain; }
 .settingsSprite { filter: invert(1); mix-blend-mode: screen; }
 .iconBtn::after {

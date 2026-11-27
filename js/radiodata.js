@@ -70,6 +70,14 @@
       format: 'Classic rock and oldies',
       files: ['audio/drive-in-oldies.mp3'],
       fallback: 'oldies'
+    },
+    {
+      // Last choice when cycling: silence. Picking any station resumes play.
+      name: 'RADIO OFF',
+      format: 'Silence — no station playing',
+      files: [],
+      fallback: 'silent',
+      off: true
     }
   ];
 })();

@@ -25,7 +25,8 @@
     { name: 'COASTAL FM', files: [], fallback: 'chill' },
     { name: 'CRUISE 101', files: [], fallback: 'cruise' },
     { name: 'ISLAND WAVE', files: [], fallback: 'island' },
-    { name: 'MOONLIGHT', files: [], fallback: 'night' }
+    { name: 'MOONLIGHT', files: [], fallback: 'night' },
+    { name: 'RADIO OFF', files: [], fallback: 'silent', off: true }
   ]);
 
   // Legacy synth styles; ignored while SYNTH_RADIO_ENABLED is false.
@@ -107,7 +108,7 @@
     volumes: Object.assign({ master: 0.85, music: 0.7, sfx: 0.85 }, storedVolumes()),
     radio: {
       index: 0, audio: null, source: 'silent', token: 0,
-      suspendedForPedestrian: false
+      suspendedForPedestrian: false, lastOnIndex: -1
     },
     musicOn: false,
     musicStep: 0,
@@ -454,6 +455,13 @@
     radioAllowed() { return !(this.spec && this.spec.pedestrian); },
     station() { return RADIO_DEFS[this.radio.index] || { name: 'RADIO', fallback: 'chill' }; },
     stationName() { return this.station().name; },
+    stationIsOff() { return !!this.station().off; },
+    radioOffIndex() {
+      for (let i = 0; i < RADIO_DEFS.length; i++) {
+        if (RADIO_DEFS[i].off) return i;
+      }
+      return -1;
+    },
     currentStyle() { return MUSIC_STYLES[this.station().fallback] || MUSIC_STYLES.chill; },
 
     stopRadioAudio(invalidate) {
@@ -603,7 +611,14 @@
     startMusic() {
       this.init();
       if (!this.ready || this.musicOn) return;
+      // Starting while Radio Off is tuned means a station was chosen, so pick
+      // a real one before switching the radio back on.
+      if (this.stationIsOff()) {
+        const firstStation = RADIO_DEFS.findIndex(function (s) { return !s.off; });
+        if (firstStation >= 0) this.radio.index = firstStation;
+      }
       this.musicOn = true;
+      this.radio.lastOnIndex = this.radio.index;
       if (!this.radioAllowed()) {
         this.radio.suspendedForPedestrian = true;
         this.pauseProcedural();
@@ -626,26 +641,43 @@
       this.stopRadioAudio();
       updateAudioUI();
     },
-    toggleMusic() { this.musicOn ? this.stopMusic() : this.startMusic(); },
+    toggleMusic() {
+      // Keyboard/gamepad shortcuts land on the same Radio Off station that the
+      // boombox reaches, so there is only one silent state to reason about.
+      const off = this.radioOffIndex();
+      if (this.musicOn) {
+        if (off >= 0) this.setStation(off, false);
+        else this.stopMusic();
+        return;
+      }
+      const last = this.radio.lastOnIndex;
+      if (last >= 0 && !RADIO_DEFS[last].off) this.setStation(last, false);
+      else this.startMusic();
+    },
     setStation(index, announce) {
       this.init();
       if (!RADIO_DEFS.length) return;
       const next = ((index % RADIO_DEFS.length) + RADIO_DEFS.length) % RADIO_DEFS.length;
-      this.radio.index = next;
+      const station = RADIO_DEFS[next];
       const announced = announce !== false;
+      this.radio.index = next;
+      if (station.off) {
+        this.stopMusic();
+        if (announced) showStationBanner(station.name, 'radio off');
+        else toast(station.name + ' — radio off', 2.2);
+        return;
+      }
+      // Choosing any real station turns the radio back on, including right
+      // after Radio Off; it no longer needs a separate play button.
+      this.radio.lastOnIndex = next;
+      this.musicOn = true;
       if (announced) {
-        showStationBanner(RADIO_DEFS[next].name,
-          this.musicOn ? 'now playing' : 'selected · press N to play');
+        showStationBanner(station.name, this.radioAllowed()
+          ? 'now playing' : 'selected · on foot');
       }
-      if (this.musicOn) {
-        this.radioStatic(0.32);
-        this.tryRadioStation(next, announce !== false);
-      } else {
-        this.pauseProcedural();
-        this.stopRadioAudio();
-        if (!announced) toast(RADIO_DEFS[next].name + ' selected — press N to play', 2.2);
-        updateAudioUI();
-      }
+      this.radioStatic(0.32);
+      this.tryRadioStation(next, announced);
+      updateAudioUI();
     },
     cycleStation(delta) { this.setStation(this.radio.index + (delta || 1), true); },
 
@@ -1295,34 +1327,28 @@
     const label = 'Music volume · ' + pct + '%';
     btn.dataset.label = label;
     btn.setAttribute('aria-label', label);
-    const toggle = $('musicToggleBtn');
-    if (toggle) {
-      const on = !!Audio.musicOn;
-      toggle.classList.toggle('off', !on);
-      const toggleLabel = on ? 'Music on — click to turn off' : 'Music off — click to turn on';
-      toggle.dataset.label = toggleLabel;
-      toggle.setAttribute('aria-label', toggleLabel);
-      toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
-      const glyph = toggle.querySelector('.musicToggleGlyph');
-      if (glyph) glyph.textContent = on ? '⏸' : '▶';
-    }
   }
 
   function updateRadioButton() {
     if (!Audio) return;
     const onFoot = !Audio.radioAllowed();
+    const off = Audio.stationIsOff();
     const stationBtn = $('stationBtn');
     if (stationBtn) {
-      stationBtn.textContent = '📻 ' + Audio.stationName() + (onFoot ? ' · ON FOOT' : '');
-      stationBtn.classList.toggle('file', !onFoot && Audio.radio.source === 'file');
-      stationBtn.classList.toggle('off', onFoot);
+      stationBtn.textContent = off
+        ? '📻 RADIO OFF'
+        : '📻 ' + Audio.stationName() + (onFoot ? ' · ON FOOT' : '');
+      stationBtn.classList.toggle('file', !off && !onFoot && Audio.radio.source === 'file');
+      stationBtn.classList.toggle('off', off || onFoot);
     }
     const boombox = $('radioBtn');
     if (boombox) {
-      const label = 'Next station · ' + Audio.stationName() + (onFoot ? ' · on foot' : '');
+      const label = off
+        ? 'Radio off · next station'
+        : 'Next station · ' + Audio.stationName() + (onFoot ? ' · on foot' : '');
       boombox.dataset.label = label;
       boombox.setAttribute('aria-label', label);
-      boombox.classList.toggle('off', onFoot);
+      boombox.classList.toggle('off', off || onFoot);
     }
   }
 
@@ -1627,13 +1653,6 @@
         }
       }
       musicBtn.blur();
-    });
-    const musicToggleBtn = $('musicToggleBtn');
-    if (musicToggleBtn) musicToggleBtn.addEventListener('click', function () {
-      Audio.init();
-      closeVolumePopup();
-      Audio.toggleMusic();
-      musicToggleBtn.blur();
     });
     const quickMusicVol = $('quickMusicVol');
     if (quickMusicVol) {

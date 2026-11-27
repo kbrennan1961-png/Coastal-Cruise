@@ -131,7 +131,7 @@
         <span>Esc / E</span><span>Leave FPV goggles and return to the pilot</span>
         <span>FPV kills</span><span>Drones, planes and enemy UFOs pay a $5,000 bonus each</span>
         <span>U</span><span>Board the city bus</span>
-        <span>N</span><span>Music on / off</span>
+        <span>N</span><span>Radio on / off</span>
         <span>B</span><span>Next radio station</span>
         <span>P</span><span>Settings: sound levels, full screen &amp; keyboard/gamepad map</span>
         <span>Q / Esc</span><span>Return to main menu</span>
@@ -146,7 +146,7 @@
         <span>X / Y</span><span>Change camera / reset</span>
         <span>LB / RB</span><span>Previous / next vehicle</span>
         <span>D-pad ↑ / ↓</span><span>Next radio station / horn &amp; pickups</span>
-        <span>L3 / R3</span><span>Music on/off / exit or enter vehicles, steal a nearby vehicle, use a safe house</span>
+        <span>L3 / R3</span><span>Radio on/off / exit or enter vehicles, steal a nearby vehicle, use a safe house</span>
         <span>Start / Back</span><span>Controls or spawn on foot at the waypoint / full waypoint map</span>
       </div>
       <div class="helpNote">Explore the coast at your own pace. Hitting pedestrians or police cars, or stealing any nearby vehicle, starts a chase and earns wanted stars. More stars send more cruisers; four stars bring police helicopters. Cruisers can only ram your car; cops arrest you only after you bail out, and you can mash <b>A/D</b> or <b>W/S</b> to resist for a few seconds. Stay out of sight for three minutes to lose the heat, or duck into a teal-marked <b>safe house</b>. Roving gangs rob people and steal cars; the air-defense battery near the river shoots down hostile drones. The first few crashes only damage the car; later impacts make it smoke heavily, catch fire and explode — only that explosion can waste you. Press <b>R</b> to reset or <b>E</b> to bail out. Stop at a restaurant pickup window to start a <b>food delivery</b> gig, follow the GPS marker to the numbered home, then stop at the porch to hand the order to the resident and collect the fare. Teen motorcycle crews tear donuts through parks and lawns by day; after dark they burglarize homes and steal cars, and cruisers chase them until they are caught. Press <b>Q</b> or <b>Esc</b> from gameplay to return to the main menu. Downloaded character models are credited in <a href="ATTRIBUTION.md" target="_blank" rel="noopener">ATTRIBUTION.md</a>.</div>
@@ -174,7 +174,7 @@
           <span>E</span><span>Exit &amp; re-enter, venues, cars, safe houses</span>
           <span>X</span><span>Horn / pickups / beat up pedestrian</span>
           <span>1–9, U, 0, J</span><span>Vehicles, bus, FPV quad, jetpack</span>
-          <span>N / B</span><span>Music toggle / next station</span>
+          <span>N / B</span><span>Radio on/off / next station (Radio Off is the last choice)</span>
           <span>P / M / G / V</span><span>Settings / map / waypoint spawn / weather</span>
           <span>Tab / F / H</span><span>Mode toggle / full controls help</span>
           <span>Q / Esc</span><span>Return to main menu</span>
@@ -185,11 +185,11 @@
           <span>X / Y</span><span>Camera / reset</span>
           <span>LB / RB</span><span>Previous / next vehicle</span>
           <span>D-pad ↑ / ↓</span><span>Next station / horn</span>
-          <span>L3 / R3</span><span>Music / exit or enter vehicles and steal vehicles</span>
+          <span>L3 / R3</span><span>Radio on/off / exit or enter vehicles and steal vehicles</span>
           <span>Start / Back</span><span>Settings or waypoint spawn / full-screen map</span>
         </div>
       </div>
-      <div class="settingsNote">Press <b>P</b> or the <b>⚙ SETTINGS</b> button any time. Use <b>⛶ FULL SCREEN</b> to fill the display, or check <b>Full screen on start</b> to remember that choice. <b>Q</b> or <b>Esc</b> returns to the main menu. Station files are optional — edit <b>js/radiodata.js</b> to point a station at your own audio files. The radio goes quiet in pedestrian mode and resumes when you get back into a vehicle.</div>
+      <div class="settingsNote">Press <b>P</b> or the <b>⚙ SETTINGS</b> button any time. Use <b>⛶ FULL SCREEN</b> to fill the display, or check <b>Full screen on start</b> to remember that choice. <b>Q</b> or <b>Esc</b> returns to the main menu. Station files are optional — edit <b>js/radiodata.js</b> to point a station at your own audio files. Cycle past the last station to <b>RADIO OFF</b>; pick any station to start listening again. The radio also goes quiet in pedestrian mode and resumes when you get back into a vehicle.</div>
       <div class="modeRow"><button id="menuBtn" class="settingsClose" type="button">Main Menu</button><button id="settingsClose" class="settingsClose" type="button">Close</button></div>
     </div>
 
@@ -200,7 +200,6 @@
         <span id="quickMusicVal" class="volumePopupValue">70</span>
       </div>
       <button id="musicBtn" class="iconBtn" type="button" data-label="Music volume" aria-label="Music volume" aria-expanded="false"><span class="musicGlyph">♪</span></button>
-      <button id="musicToggleBtn" class="iconBtn" type="button" data-label="Music on / off" aria-label="Music on / off" aria-pressed="true"><span class="musicToggleGlyph">⏸</span></button>
       <button id="radioBtn" class="iconBtn" type="button" data-label="Next radio station" aria-label="Next radio station"><img class="iconSprite" src="assets/ui/boombox.svg" alt="" /></button>
       <button id="settingsBtn" class="iconBtn" type="button" data-label="Settings" aria-label="Settings"><img class="iconSprite settingsSprite" src="assets/ui/settings.png" alt="" /></button>
       <button id="vehiclesBtn" class="iconBtn" type="button" data-label="Vehicles" aria-label="Vehicles"><img class="iconSprite" src="assets/ui/car.svg" alt="" /></button>
