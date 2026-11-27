@@ -246,23 +246,6 @@
       this.busIndex = busIndex;
       this.exhaustTimer = Math.random() * 0.25;
       this.heavySmoker = false;
-
-      const c = document.createElement('canvas');
-      c.width = 256; c.height = 64;
-      const g = c.getContext('2d');
-      g.fillStyle = '#135c58'; g.fillRect(0, 0, 256, 64);
-      g.fillStyle = '#f4d35e'; g.fillRect(5, 5, 246, 54);
-      g.fillStyle = '#113b39'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.font = 'bold 30px Arial';
-      g.fillText('COAST TRANSIT ' + (busIndex + 1), 128, 33);
-      const tex = new THREE.CanvasTexture(c);
-      if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
-      this.routeBoard = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: tex, transparent: true, depthTest: false
-      }));
-      this.routeBoard.scale.set(5.4, 1.35, 1);
-      this.routeBoard.position.y = 4.25;
-      this.group.add(this.routeBoard);
       this.update(0, { pos: { x: 0, z: 0 }, forward: function () { return { x: 0, z: 0 }; } }, null, null);
     }
 
@@ -437,25 +420,8 @@
       this.recklessCrashCooldown = 0;
       this.hornCooldown = 0;
       this.yieldingPed = false;
-      this.flash = 0;
       this.exhaustTimer = Math.random() * 0.25;
       this.heavySmoker = false;
-
-      // Small "!" sprite shown when honking.
-      const c = document.createElement('canvas');
-      c.width = c.height = 64;
-      const g = c.getContext('2d');
-      g.fillStyle = 'rgba(0,0,0,0)'; g.fillRect(0, 0, 64, 64);
-      g.fillStyle = '#ffd34d'; g.font = 'bold 52px Arial';
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('!', 32, 32);
-      this.alert = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: new THREE.CanvasTexture(c), transparent: true, depthTest: false
-      }));
-      this.alert.scale.set(2.2, 2.2, 1);
-      this.alert.visible = false;
-      this.group.add(this.alert);
-      this.alert.position.set(0, this.kind === 'truck' ? 4.2 : 3.2, 0);
       this.group.rotation.y = 0;
     }
 
@@ -539,14 +505,10 @@
         this.target = Math.min(this.target, tailgating || ramming ? 6 : 2.5);
         if (this.hornCooldown <= 0) {
           this.hornCooldown = 2.4;
-          this.flash = 1.4;
           if (audio) audio.honk(U.clamp(1 - pDist / 20, 0, 1));
         }
       }
       this.hornCooldown -= dt;
-      this.flash = Math.max(0, this.flash - dt);
-      this.alert.visible = this.flash > 0;
-      if (this.alert.visible) this.alert.position.y += Math.sin(performance.now() * 0.01) * 0.01;
 
       // Default lane target, then let the active reckless impulse override it.
       this.laneTarget = this.baseLane;

@@ -763,8 +763,7 @@
     } else if (kind === 'bus') {
       g.fillStyle = '#176b45'; g.fillRect(2, 18, 124, 92);
       g.lineWidth = 5; g.strokeStyle = '#f4f1df'; g.strokeRect(5, 21, 118, 86);
-      g.fillStyle = '#f4d35e'; fitText(g, 'bus stop', 64, 57, 110, 25, 'Arial', 'bold');
-      g.fillStyle = '#ffffff'; fitText(g, 'CITY TRANSIT', 64, 91, 106, 14);
+      g.fillStyle = '#f4d35e'; fitText(g, 'bus stop', 64, 64, 110, 25, 'Arial', 'bold');
     } else {
       g.fillStyle = '#1f6b8c'; g.fillRect(2, 28, 124, 72);
       g.lineWidth = 6; g.strokeStyle = '#e8f2f4'; g.strokeRect(7, 32, 114, 64);
