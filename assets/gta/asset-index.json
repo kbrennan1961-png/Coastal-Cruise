@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "generated": null,
+  "categories": [
+    { "key": "textures", "label": "Textures" },
+    { "key": "buildings", "label": "Buildings" },
+    { "key": "roads", "label": "Roads" },
+    { "key": "characters", "label": "Characters" },
+    { "key": "vehicles", "label": "Vehicles" },
+    { "key": "trees", "label": "Trees" },
+    { "key": "props", "label": "Props" },
+    { "key": "models", "label": "Models" }
+  ],
+  "assets": [],
+  "textures": {},
+  "models": {}
+}

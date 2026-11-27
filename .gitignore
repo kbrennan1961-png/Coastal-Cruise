@@ -4,5 +4,7 @@ music compressed/
 tools/__pycache__/
 *.webm
 *.mp4
+assets/gta/work/
+assets/gta/asset-index.generated.json
 .DS_Store
 .tmp-*

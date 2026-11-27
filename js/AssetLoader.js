@@ -164,7 +164,8 @@
     return mat;
   }
 
-  function staticPartMaterial(model, part, color) {
+  function staticPartMaterial(model, part, color, textureOverride) {
+    if (textureOverride) return texturedMaterial(textureOverride);
     if (part.texture) return texturedMaterial(part.texture);
     // Baked props can carry their own material colour (e.g. the F-16's desert
     // camo) instead of sharing the generic map-edit body colour.
@@ -203,6 +204,18 @@
         }
         if (CC.CustomModels && CC.CustomModels.models) {
           CC.CustomModels.models[key] = models[key];
+        }
+      });
+      return true;
+    },
+
+    /* Runtime texture registration for the asset-import panel. */
+    registerTextures: function (textures) {
+      if (!textures) return false;
+      Object.keys(textures).forEach(function (key) {
+        assets.textures[key] = textures[key];
+        if (CC.GeneratedAssets && CC.GeneratedAssets.textures) {
+          CC.GeneratedAssets.textures[key] = textures[key];
         }
       });
       return true;
@@ -316,7 +329,7 @@
       group.name = 'Map model: ' + name;
 
       model.parts.forEach(function (part) {
-        const mat = staticPartMaterial(model, part, color);
+        const mat = staticPartMaterial(model, part, color, opts.texture);
         if (!mat) return;
         const mesh = new THREE.Mesh(geometry(part), mat);
         mesh.castShadow = true;

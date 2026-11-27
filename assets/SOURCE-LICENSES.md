@@ -68,3 +68,20 @@ runtime with Three.js `GLTFLoader` and keep their original animations.
 
 The `PSX Style Cars by GGBot` archive was **not** used: it contains no license
 file or redistribution terms, so it was not embedded here.
+
+## Locally imported GTA-era / community assets
+
+`js/CommunityAssets.js` is shipped as an empty placeholder registry. Running
+`node tools/import-gta-assets.js` overwrites that file locally with converted
+assets and writes `assets/gta/asset-index.generated.json` (git-ignored). Do not
+commit the populated `CommunityAssets.js`; GTA-derived or community-licensed
+files are meant to stay local build artifacts. Manually downloaded files from
+GTAinside and <https://libertycity.net/> can be
+used this way without an account or stored credentials. Per-asset author,
+source link and license must be checked and added here before any generated
+data is published to the live site.
+
+The conversion helper vendors the open-source DragonFF Blender addon under
+`tools/vendor/DragonFF` (GPL-3.0). It is a build-time tool only and is not
+loaded by the game or editor at runtime. The Node helper uses `rw-parser`
+(GPL-3.0) and `pngjs` (MIT) the same way.

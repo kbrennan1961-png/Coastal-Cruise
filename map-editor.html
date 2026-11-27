@@ -23,6 +23,7 @@
         <button class="menuItem" data-target="#newMapBtn">New map</button>
         <button class="menuItem" data-target="#loadBtn">Load patch…</button>
         <button class="menuItem" data-target="#importBtn">Import data…</button>
+        <button class="menuItem" id="gtaAssetMenuBtn" data-target="#gtaImportBtn">asset import</button>
         <div class="menuSep"></div>
         <button class="menuItem" data-target="#applyBtn">Apply to game <span class="shortcut">MapEdits.js</span></button>
         <button class="menuItem" id="chooseGameFolderBtn">Change game folder…</button>
@@ -140,11 +141,13 @@
       <button id="newGameBtn" title="Start a standalone game in a new folder">🏗 <span>New game</span></button>
       <button id="newMapBtn" title="Start a blank map project">✚ <span>New map</span></button>
       <button id="importBtn" title="Import OSM, GeoJSON or JSON map data">⤓ <span>Import data</span></button>
+      <button id="gtaImportBtn" title="Import GTA/community models and textures">⬆ <span>asset import</span></button>
       <button id="resetBtn" title="Discard edits and reload the current game map">↺ <span>Reset</span></button>
       <button id="loadBtn" title="Load an existing MapEdits.js patch">📂 <span>Load patch</span></button>
       <button id="copyBtn" title="Copy generated patch JS to clipboard">⧉ <span>Copy JS</span></button>
       <input type="file" id="loadInput" accept=".js,.json,.txt" hidden />
       <input type="file" id="importInput" accept=".osm,.xml,.kml,.json,.geojson,.txt" hidden />
+      <input type="file" id="gtaImportInput" accept=".json,.glb,.png,.jpg,.jpeg,.webp,.bmp,.dff,.txd,.img" multiple hidden />
       <input type="file" id="sourceFolderInput" webkitdirectory directory multiple hidden />
     </div>
   </header>
@@ -172,6 +175,7 @@
         <div id="selectionForm" hidden>
           <label>Type <input id="selType" disabled /></label>
           <label id="selModelRow" hidden>Model <select id="selModel"></select></label>
+          <label id="selTextureRow" hidden>Texture <select id="selTexture"></select></label>
           <label id="selScaleRow" hidden>Scale <input id="selScale" type="number" step="0.05" min="0.1" /></label>
           <label>Name <input id="selName" /></label>
           <div class="row">
@@ -307,6 +311,27 @@
       <div class="modalButtons">
         <button id="assetCancelBtn">Cancel</button>
         <button id="assetCreateBtn" class="primary">Create asset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gtaImportDialog" class="modal" hidden>
+    <div class="modalCard wideCard">
+      <h2>ASSET IMPORT</h2>
+      <p>Browse converted GTA-era and community assets. Models are sorted by type; texture entries can be applied to the selected placed model. Import generated JSON, GLB or PNG/JPG files directly here.</p>
+      <label class="checkRow">
+        <span>Convert local DFF/TXD files first:</span>
+        <code>node tools/import-gta-assets.js --source "/Volumes/PS2/GTA San Andreas MODS"</code>
+      </label>
+      <div class="gtaImportToolbar">
+        <button id="gtaImportFileBtn">Import asset files…</button>
+        <select id="gtaCategoryFilter" aria-label="Filter asset type">
+          <option value="">All types</option>
+        </select>
+      </div>
+      <div id="gtaAssetList" class="gtaAssetList"></div>
+      <div class="modalButtons">
+        <button id="gtaImportCloseBtn" class="primary">Done</button>
       </div>
     </div>
   </div>
@@ -500,12 +525,14 @@
   <script src="js/mapdata.js"></script>
   <script src="js/MapEdits.js"></script>
   <script src="js/GeneratedAssets.js"></script>
+  <script src="js/CommunityAssets.js"></script>
   <script src="js/DownloadedAssets.js"></script>
   <script src="js/CustomModels.js"></script>
   <script src="js/AssetLoader.js"></script>
   <script src="js/imagemap.js"></script>
   <script src="js/MapPreview3D.js"></script>
   <script src="js/MissionShots.js"></script>
+  <script src="js/BrowserGtaImport.js"></script>
   <script src="js/MapEditor.js"></script>
 </body>
 </html>

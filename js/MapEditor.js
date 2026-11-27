@@ -28,6 +28,20 @@
   const MODEL_RECORDS = (CC.AssetLoader && CC.AssetLoader.models) || {};
   let MODEL_KEYS = Object.keys(MODEL_RECORDS).sort();
 
+  const GTA_TYPES = [
+    { key: 'textures', label: 'Textures' },
+    { key: 'buildings', label: 'Buildings' },
+    { key: 'roads', label: 'Roads' },
+    { key: 'characters', label: 'Characters' },
+    { key: 'vehicles', label: 'Vehicles' },
+    { key: 'trees', label: 'Trees' },
+    { key: 'props', label: 'Props' },
+    { key: 'models', label: 'Models' }
+  ];
+  const GTA = (CC.GTAImport = CC.GTAImport || { version: 1, assets: [], categories: GTA_TYPES });
+  if (!Array.isArray(GTA.assets)) GTA.assets = [];
+  if (!Array.isArray(GTA.categories)) GTA.categories = GTA_TYPES;
+
   function refreshModelKeys() {
     MODEL_KEYS = Object.keys(MODEL_RECORDS).sort();
   }
@@ -43,6 +57,10 @@
   function modelGroup(key) {
     const m = MODEL_RECORDS[key] || {};
     if (m.kind === 'downloadedRock') return 'Rocks';
+    if (m.gtaType) {
+      const found = GTA.categories.find(function (c) { return c.key === m.gtaType; });
+      return found ? 'GTA · ' + found.label : 'GTA assets';
+    }
     if (m.kind) return modelLabel(m.kind) + 's';
     if (m.wheels) return 'Vehicles';
     return 'Baked scenery';
@@ -69,6 +87,36 @@
       select.appendChild(group);
     });
     if (selected && MODEL_RECORDS[selected]) select.value = selected;
+  }
+
+  function textureLabel(key) {
+    const found = GTA.assets.find(function (a) { return a.texture === key || a.key === key; });
+    if (found && found.label) return String(found.label);
+    return String(key).replace(/^gtaTex_/, '').replace(/_/g, ' ');
+  }
+
+  function fillTextureSelect(select, selected) {
+    if (!select) return;
+    const textures = (CC.GeneratedAssets && CC.GeneratedAssets.textures) || {};
+    select.textContent = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'None';
+    select.appendChild(none);
+    Object.keys(textures).sort(function (a, b) {
+      return textureLabel(a).localeCompare(textureLabel(b));
+    }).forEach(function (key) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = textureLabel(key);
+      select.appendChild(option);
+    });
+    select.value = selected || '';
+  }
+
+  function gtaTypeLabel(type) {
+    const found = GTA.categories.find(function (c) { return c.key === type; });
+    return found ? found.label : modelLabel(type || 'asset');
   }
 
   function modelFootprint(a) {
@@ -987,6 +1035,7 @@
         : 'Nothing selected.';
       $('selectionForm').hidden = true;
       $('selModelRow').hidden = true;
+      $('selTextureRow').hidden = true;
       $('selScaleRow').hidden = true;
       return;
     }
@@ -997,9 +1046,11 @@
     const isRoad = s.kind === 'road';
     const isModel = obj.type === 'model' || obj.type === 'glb' || obj.type === 'gltf';
     $('selModelRow').hidden = !isModel;
+    $('selTextureRow').hidden = !isModel;
     $('selScaleRow').hidden = !isModel;
     if (isModel) {
       fillModelSelect($('selModel'), obj.model || obj.modelKey || obj.key);
+      fillTextureSelect($('selTexture'), obj.texture || '');
       $('selScale').value = Number(obj.scale) || 1;
     }
     $('selType').value = isRoad ? (obj.type || 'road') : (obj.type || s.kind);
@@ -1054,6 +1105,9 @@
       if (obj.type === 'model' || obj.type === 'glb' || obj.type === 'gltf') {
         obj.model = $('selModel').value || obj.model || obj.key;
         obj.scale = Math.max(0.05, Number($('selScale').value) || 1);
+        const texture = $('selTexture') ? $('selTexture').value : '';
+        if (texture) obj.texture = texture;
+        else delete obj.texture;
         const fp = modelFootprint(obj);
         if (fp) {
           obj.w = fp.w;
@@ -2590,6 +2644,194 @@
     setMessage('Downloaded map-patch.json for Blender.');
   }
 
+  /* ---------- GTA / community asset import ---------- */
+  function gtaEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = String(text);
+    return node;
+  }
+
+  function refreshGtaCategoryFilter() {
+    const select = $('gtaCategoryFilter');
+    if (!select) return;
+    const current = select.value;
+    select.textContent = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'All types';
+    select.appendChild(all);
+    GTA.categories.forEach(function (cat) {
+      const option = document.createElement('option');
+      option.value = cat.key;
+      option.textContent = cat.label;
+      select.appendChild(option);
+    });
+    select.value = current || '';
+  }
+
+  function renderGtaAssets() {
+    const list = $('gtaAssetList');
+    if (!list) return;
+    list.textContent = '';
+    const filter = $('gtaCategoryFilter') ? $('gtaCategoryFilter').value : '';
+    const byType = {};
+    GTA.assets.forEach(function (asset) {
+      const type = asset.type || 'models';
+      if (!byType[type]) byType[type] = [];
+      byType[type].push(asset);
+    });
+    let shown = 0;
+    GTA.categories.forEach(function (cat) {
+      if (filter && filter !== cat.key) return;
+      const entries = byType[cat.key] || [];
+      if (!entries.length) return;
+      entries.sort(function (a, b) {
+        return String(a.label || a.key || '').localeCompare(String(b.label || b.key || ''));
+      });
+      shown += entries.length;
+      const section = gtaEl('div', 'gtaAssetSection');
+      section.appendChild(gtaEl('div', 'gtaAssetHeading', cat.label + ' (' + entries.length + ')'));
+      entries.forEach(function (asset) {
+        const row = gtaEl('div', 'gtaAssetRow');
+        const isTexture = asset.type === 'textures' || (!asset.model && !!asset.texture);
+        const uri = (CC.GeneratedAssets && CC.GeneratedAssets.textures || {})[asset.texture || asset.key];
+        if (isTexture && uri) {
+          const thumb = gtaEl('img', 'gtaAssetThumb');
+          thumb.src = uri;
+          thumb.alt = '';
+          row.appendChild(thumb);
+        }
+        row.appendChild(gtaEl('span', 'gtaAssetName', asset.label || asset.key || 'Asset'));
+        const available = !isTexture && !!MODEL_RECORDS[asset.key];
+        row.appendChild(gtaEl('span', 'gtaAssetMeta',
+          (isTexture ? 'texture' : available ? gtaTypeLabel(asset.type) : 'unavailable') +
+          (asset.source ? ' · ' + asset.source : '')));
+        const action = gtaEl('button', '', isTexture ? 'Apply' : 'Place');
+        action.disabled = !isTexture && !available;
+        action.addEventListener('click', function () {
+          if (isTexture) applyTextureToSelection(asset.texture || asset.key);
+          else placeGtaAsset(asset);
+        });
+        row.appendChild(action);
+        section.appendChild(row);
+      });
+      list.appendChild(section);
+    });
+    if (!shown) {
+      list.appendChild(gtaEl('div', 'gtaEmpty',
+        'No assets yet. Import generated JSON / GLB / PNG files, or run the DFF/TXD converter.'));
+    }
+  }
+
+  function openGtaImportDialog() {
+    refreshGtaCategoryFilter();
+    renderGtaAssets();
+    $('gtaImportDialog').hidden = false;
+  }
+
+  function applyGtaImport(data) {
+    if (!data) return false;
+    const counts = { models: 0, textures: 0, assets: 0 };
+    const selectedTexture = state.selection && state.selection.kind === 'asset'
+      ? (getSelectedObject() || {}).texture : null;
+    const selectedModels = {};
+    [ $('modelKey'), $('assetModel'), $('paintModel'), $('selModel') ].forEach(function (select) {
+      if (select) selectedModels[select.id] = select.value;
+    });
+
+    if (data.textures && Object.keys(data.textures).length) {
+      if (CC.AssetLoader && CC.AssetLoader.registerTextures) {
+        CC.AssetLoader.registerTextures(data.textures);
+      } else {
+        Object.assign(CC.GeneratedAssets.textures, data.textures);
+      }
+      counts.textures = Object.keys(data.textures).length;
+    }
+    if (data.models && Object.keys(data.models).length) {
+      if (CC.AssetLoader && CC.AssetLoader.registerModels) {
+        CC.AssetLoader.registerModels(data.models);
+      } else {
+        Object.assign(MODEL_RECORDS, data.models);
+      }
+      counts.models = Object.keys(data.models).length;
+    }
+    if (Array.isArray(data.assets) && data.assets.length) {
+      if (Array.isArray(data.categories) && data.categories.length) GTA.categories = data.categories;
+      const seen = {};
+      GTA.assets.forEach(function (asset) {
+        seen[(asset.type || '') + '|' + (asset.key || asset.label || '')] = true;
+      });
+      data.assets.forEach(function (asset) {
+        const id = (asset.type || '') + '|' + (asset.key || asset.label || '');
+        if (seen[id]) return;
+        seen[id] = true;
+        GTA.assets.push(asset);
+        counts.assets++;
+      });
+      const order = {};
+      GTA.categories.forEach(function (cat, i) { order[cat.key] = i; });
+      GTA.assets.sort(function (a, b) {
+        const d = (order[a.type] == null ? 99 : order[a.type]) - (order[b.type] == null ? 99 : order[b.type]);
+        return d || String(a.label || a.key || '').localeCompare(String(b.label || b.key || ''));
+      });
+    }
+    if (counts.models) {
+      refreshModelKeys();
+      [ $('modelKey'), $('assetModel'), $('paintModel'), $('selModel') ].forEach(function (select) {
+        if (!select) return;
+        const previous = selectedModels[select.id];
+        fillModelSelect(select, MODEL_RECORDS[previous] ? previous : MODEL_KEYS[0]);
+      });
+    }
+    fillTextureSelect($('selTexture'), selectedTexture);
+    refreshGtaCategoryFilter();
+    renderGtaAssets();
+    updateSelectionForm();
+    if (CC.MapPreview3D && CC.MapPreview3D.refresh) CC.MapPreview3D.refresh();
+    const parts = [];
+    if (counts.models) parts.push(counts.models + ' models');
+    if (counts.textures) parts.push(counts.textures + ' textures');
+    if (counts.assets) parts.push(counts.assets + ' entries');
+    const notice = data.notices && data.notices.length ? ' — ' + data.notices[0] : '';
+    setMessage(parts.length ? 'Asset import: ' + parts.join(', ') + '.' + notice : 'No importable assets found.' + notice);
+    return counts.models + counts.textures + counts.assets > 0;
+  }
+
+  function placeGtaAsset(asset) {
+    const key = asset.key || asset.model;
+    if (!MODEL_RECORDS[key]) {
+      setMessage('That model is not registered in this session.');
+      return;
+    }
+    $('gtaImportDialog').hidden = true;
+    $('modelKey').value = key;
+    $('modelScale').value = '1';
+    setTool('model');
+    setMessage('Click the map to place ' + (asset.label || modelLabel(key)) +
+      ' (' + gtaTypeLabel(asset.type) + ').');
+  }
+
+  function applyTextureToSelection(textureKey) {
+    const obj = getSelectedObject();
+    const s = state.selection;
+    if (!s || s.kind !== 'asset' || !obj ||
+        !(obj.type === 'model' || obj.type === 'glb' || obj.type === 'gltf')) {
+      setMessage('Select a placed model first, then apply this texture.');
+      return;
+    }
+    if (!textureKey || !(CC.GeneratedAssets.textures || {})[textureKey]) {
+      setMessage('That texture is not registered in this session.');
+      return;
+    }
+    pushUndo();
+    obj.texture = textureKey;
+    updateSelectionForm();
+    render();
+    if (CC.MapPreview3D && CC.MapPreview3D.refresh) CC.MapPreview3D.refresh();
+    setMessage('Applied texture "' + textureLabel(textureKey) + '" to ' + (obj.name || 'selected model') + '.');
+  }
+
   /* ---------- new asset dialog ---------- */
   const ASSET_LABELS = { building: 'Building', bridge: 'Bridge', tree: 'Tree', model: 'Model' };
 
@@ -3075,6 +3317,10 @@
       }
       return;
     }
+    if (!$('gtaImportDialog').hidden) {
+      if (e.key === 'Escape') { e.preventDefault(); $('gtaImportDialog').hidden = true; }
+      return;
+    }
     if (!$('assetDialog').hidden) {
       if (e.key === 'Escape') { e.preventDefault(); closeAssetDialog(null); }
       return;
@@ -3315,6 +3561,28 @@
     if ($('importInput').files && $('importInput').files[0]) importMapFile($('importInput').files[0]);
     $('importInput').value = '';
   });
+  $('gtaImportBtn').addEventListener('click', openGtaImportDialog);
+  $('gtaImportCloseBtn').addEventListener('click', function () {
+    $('gtaImportDialog').hidden = true;
+  });
+  $('gtaImportFileBtn').addEventListener('click', function () {
+    $('gtaImportInput').click();
+  });
+  $('gtaImportInput').addEventListener('change', async function () {
+    const files = Array.prototype.slice.call(this.files || []);
+    this.value = '';
+    if (!files.length) return;
+    if (!CC.GtaImporter || !CC.GtaImporter.importFiles) {
+      setMessage('BrowserGtaImport.js did not load.');
+      return;
+    }
+    try {
+      const data = await CC.GtaImporter.importFiles(files);
+      applyGtaImport(data);
+    } catch (e) {
+      setMessage('Asset import failed: ' + (e && e.message ? e.message : e));
+    }
+  });
   window.addEventListener('resize', resize);
 
   /* ---------- application menu ---------- */
@@ -3425,6 +3693,7 @@
     fillModelSelect($('assetModel'), MODEL_KEYS[0]);
     fillModelSelect($('selModel'), MODEL_KEYS[0]);
     fillModelSelect($('paintModel'), MODEL_KEYS[0]);
+    fillTextureSelect($('selTexture'), '');
     initData();
     buildTerrain();
     if (CC.MapPreview3D) {

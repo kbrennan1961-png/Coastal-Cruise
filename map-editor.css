@@ -144,6 +144,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* Pan is a navigation tool, so keep its label visible next to the zoom controls. */
 #toolbar #panBtn span { display: inline; }
 #toolbar #panBtn { min-width: 68px; }
+/* The requested asset-import action keeps its text label at every width. */
+#toolbar #gtaImportBtn span { display: inline; }
+#toolbar #gtaImportBtn { min-width: 96px; }
 
 main { display: flex; height: calc(100% - 30px - 52px - 28px); }
 
@@ -273,3 +276,33 @@ output { display: inline-block; width: 34px; text-align: right; color: var(--tex
 .shotEntry button { padding: 3px 6px; font-size: 11px; }
 button.wide { width: 100%; margin-top: 6px; }
 .modalCard label code { display: block; margin-top: 5px; padding: 7px 8px; background: #11171c; border: 1px solid var(--line); border-radius: 4px; color: var(--accent); white-space: pre-wrap; word-break: break-all; }
+
+/* GTA asset import browser */
+.gtaImportToolbar { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.gtaImportToolbar select { flex: 1; }
+.gtaAssetList { max-height: 48vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 5px; }
+.gtaAssetSection { border-bottom: 1px solid var(--line); }
+.gtaAssetSection:last-child { border-bottom: 0; }
+.gtaAssetHeading {
+  padding: 7px 9px;
+  background: #131c22;
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+}
+.gtaAssetRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.035);
+}
+.gtaAssetRow:first-of-type { border-top: 0; }
+.gtaAssetRow .gtaAssetName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gtaAssetRow .gtaAssetMeta { font-size: 10px; color: var(--muted); }
+.gtaAssetRow button { padding: 3px 7px; font-size: 11px; }
+.gtaAssetThumb { width: 34px; height: 34px; object-fit: contain; background: #0c1115; border: 1px solid var(--line); border-radius: 3px; }
+.gtaEmpty { padding: 18px; text-align: center; color: var(--muted); font-size: 12px; }

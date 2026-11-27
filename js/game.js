@@ -848,12 +848,20 @@
     Game.fpvMessageTimer = duration || 2.6;
   };
 
-  // The roach is an on-foot skin, but unlike other pedestrians it can use the
-  // first-person camera slot. Keep this check shared by the camera and cycling.
-  function isRoachPed() {
+  // Every on-foot skin — redneck, roach and classic — is third-person only.
+  // Keep this check shared by spawning, camera cycling and the per-frame camera
+  // so no path can drop the lens inside a baked model or start a skin in FPV.
+  function isThirdPersonOnlyPed() {
     const ped = Game.vehicles && Game.vehicles.pedestrian;
-    return Game.activeKey === 'pedestrian' && !!ped &&
-      (Game.pedSkin === 'roach' || ped.downloadedKey === 'roach');
+    return Game.activeKey === 'pedestrian' && !!ped && !!ped.isPedestrian;
+  }
+
+  function forceThirdPersonCamera() {
+    if (Game.camMode === 0) return false;
+    Game.camMode = 0;
+    const camEl = $('camMode');
+    if (camEl) camEl.textContent = Game.camModes[0];
+    return true;
   }
 
   // `fpvActive` now means the goggles are on (first-person camera), not merely
@@ -1301,15 +1309,17 @@
   }
   Game.toggleOnFoot = toggleOnFoot;
 
-  // Camera cycling for keyboard and gamepad. On foot the Hood view would put
-  // the lens inside the baked redneck model, so skip it except for the roach.
-  // The drone uses that same first-person slot for its telemetry goggles.
+  // Camera cycling for keyboard and gamepad. On-foot bodies are always third
+  // person: the redneck/roach models would put the lens inside themselves in
+  // Hood view. The drone keeps the first-person slot for its goggles.
   function cycleCamera() {
     const active = Game.vehicles[Game.activeKey];
-    let nextMode = (Game.camMode + 1) % Game.camModes.length;
-    if (active && active.isPedestrian && nextMode === 1 && !isRoachPed()) {
-      nextMode = (nextMode + 1) % Game.camModes.length;
+    if (isThirdPersonOnlyPed()) {
+      forceThirdPersonCamera();
+      toast('Camera: Chase (on foot)', 1.4);
+      return;
     }
+    let nextMode = (Game.camMode + 1) % Game.camModes.length;
     Game.camMode = nextMode;
     if (active && active.isFpv) setFpvMode(nextMode === 1, active);
     const label = active && active.isFpv && nextMode === 1
@@ -2109,9 +2119,9 @@
     const wanted = key && key !== 'default' ? key : 'default';
     const quiet = announce === false;
     Game.pedSkin = wanted;
-    // Selecting the roach starts in third person, like a newly chosen vehicle;
-    // C can then switch it to first person.
-    if (wanted === 'roach') Game.camMode = 0;
+    // Redneck and roach (and the classic body) always start in third person.
+    // Clear any stale first-person mode before the new skin becomes active.
+    if (Game.activeKey === 'pedestrian') forceThirdPersonCamera();
     const ped = Game.vehicles && Game.vehicles.pedestrian;
     if (!ped || !ped.setSkin) return Promise.resolve(null);
     return ped.setSkin(wanted).then(function (rig) {
@@ -2263,17 +2273,10 @@
     const ped = !!v.isPedestrian;
     const flying = !!v.isAircraft;
     // Defensive: an old Hood or FPV setting must never hide the on-foot
-    // character. Ordinary pedestrian entries reset to Chase, but this also
-    // covers gamepad state or a direct camMode/fpvActive change.
+    // character. This also covers gamepad state or a direct camMode/fpvActive
+    // change after switching skins.
     if (ped) {
-      // Ordinary on-foot bodies stay third person: a stale Hood view would put
-      // the lens inside the baked model. The roach is the exception and uses
-      // the first-person slot like other vehicles.
-      if (Game.camMode !== 0 && !(Game.camMode === 1 && isRoachPed())) {
-        Game.camMode = 0;
-        const camEl = $('camMode');
-        if (camEl) camEl.textContent = Game.camModes[Game.camMode];
-      }
+      forceThirdPersonCamera();
       if (Game.fpvActive) {
         const drone = Game.vehicles.fpv;
         setFpvMode(false, drone);

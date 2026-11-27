@@ -546,7 +546,8 @@
     if (typeof color === 'string' && color.charAt(0) === '#') color = parseInt(color.slice(1), 16);
     const obj = loader.buildModel(key, {
       scale: scale,
-      color: color == null ? undefined : color
+      color: color == null ? undefined : color,
+      texture: a.texture || null
     });
     if (!obj) return;
     obj.position.set(Number(a.x) || 0,

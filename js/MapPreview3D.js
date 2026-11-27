@@ -368,7 +368,8 @@
     if (typeof color === 'string' && color.charAt(0) === '#') color = parseInt(color.slice(1), 16);
     const obj = loader.buildModel(key, {
       scale: Math.max(0.05, Number(a.scale) || 1),
-      color: color == null ? undefined : color
+      color: color == null ? undefined : color,
+      texture: a.texture || null
     });
     if (!obj) return;
     upgradeObjectMaterials(obj);
