@@ -1,4 +1,8 @@
 version: 1
 type: web
 build:
-  framework: static
+  framework: dockerfile
+  root_dir: .
+  dockerfile: Dockerfile
+run:
+  port: 3000
