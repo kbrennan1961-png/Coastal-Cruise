@@ -5,6 +5,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && git lfs install
 
+# Cache buster: GitHub sets Last-Modified on this endpoint to the latest
+# commit date, so a new push invalidates the git clone layer below.
+ADD https://api.github.com/repos/kbrennan1961-png/Coastal-Cruise/commits/main /tmp/github-commit.json
+
 ARG REPO_URL=https://github.com/kbrennan1961-png/Coastal-Cruise.git
 WORKDIR /src
 RUN git clone --depth 1 "$REPO_URL" . \

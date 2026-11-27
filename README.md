@@ -25,7 +25,8 @@ The live game is hosted on **Deplexo** at
 `kbrennan1961-png/Coastal-Cruise` on GitHub. Pushes to `main` trigger an
 automatic rebuild and redeploy. The site is fully static; nginx serves the
 files from a Docker image that pulls the Git LFS media at build time. Netlify
-is no longer the active host.
+is no longer the active host. The Dockerfile uses GitHub's commit API as a
+cache buster so the source clone is rebuilt on every push.
 
 The radio MP3s in `audio/` are compressed to under 25 MB each. The repo uses
 Git LFS for `*.mp3`, so GitHub stores small pointer files and the Deplexo build
