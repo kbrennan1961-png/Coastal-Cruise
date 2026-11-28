@@ -23,14 +23,29 @@
     return mesh;
   }
 
+  const wheelGeoCache = new Map();
+  function wheelGeometries(radius, width) {
+    const key = radius.toFixed(3) + '|' + width.toFixed(3);
+    let pair = wheelGeoCache.get(key);
+    if (!pair) {
+      pair = {
+        tyre: new THREE.CylinderGeometry(radius, radius, width, 10),
+        hub: new THREE.CylinderGeometry(radius * 0.48, radius * 0.48, width + 0.03, 8)
+      };
+      wheelGeoCache.set(key, pair);
+    }
+    return pair;
+  }
+
   function addWheel(parent, x, y, z, radius, width) {
     const pivot = new THREE.Group();
     pivot.position.set(x, y, z);
     pivot.rotation.z = Math.PI / 2;
-    const tyre = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 10), tyreMat);
+    const geos = wheelGeometries(radius, width);
+    const tyre = new THREE.Mesh(geos.tyre, tyreMat);
     tyre.castShadow = true;
     pivot.add(tyre);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.48, radius * 0.48, width + 0.03, 8), hubMat);
+    const hub = new THREE.Mesh(geos.hub, hubMat);
     pivot.add(hub);
     parent.add(pivot);
     return tyre;
@@ -94,6 +109,9 @@
       fx.add(m);
       flames.push(m);
     }
+    // Undamaged cars are the norm; keep all sixteen transparent meshes out of
+    // the render list until damage actually appears.
+    fx.visible = false;
     group.add(fx);
     return { group: fx, smoke: smoke, flames: flames };
   }
@@ -223,32 +241,36 @@
       const pants = lam(o.pants || 0x405466), shoes = lam(o.shoes || 0x37342f);
       const hair = lam(o.hair || 0x3b2c24), dark = lam(0x2b2c2e);
       const group = new THREE.Group();
+      // Static body parts never animate; merge them by material so a walking
+      // ped costs a few draws instead of twenty.
+      const staticGroup = new THREE.Group();
+      group.add(staticGroup);
 
       // Torso, belt and collar.
       const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.32, 0.92, 8), shirt);
       torso.position.y = 1.16; torso.castShadow = true;
-      group.add(torso);
-      group.add(box(0.6, 0.09, 0.36, dark, 0, 0.76, 0));
-      group.add(box(0.34, 0.07, 0.3, lam(new THREE.Color(o.shirt || 0xf2b84b).offsetHSL(0, 0, -0.12).getHex()), 0, 1.58, 0));
+      staticGroup.add(torso);
+      staticGroup.add(box(0.6, 0.09, 0.36, dark, 0, 0.76, 0));
+      staticGroup.add(box(0.34, 0.07, 0.3, lam(new THREE.Color(o.shirt || 0xf2b84b).offsetHSL(0, 0, -0.12).getHex()), 0, 1.58, 0));
 
       // Neck, head, ears, hair and simple face.
       const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.11, 0.18, 6), skin);
-      neck.position.y = 1.64; group.add(neck);
+      neck.position.y = 1.64; staticGroup.add(neck);
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 7), skin);
       head.position.y = 1.85; head.castShadow = true;
-      group.add(head);
+      staticGroup.add(head);
       [-0.23, 0.23].forEach(function (x) {
         const ear = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 5), skin);
-        ear.position.set(x, 1.84, 0); group.add(ear);
+        ear.position.set(x, 1.84, 0); staticGroup.add(ear);
       });
       const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.258, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.58), hair);
-      hairCap.position.y = 1.87; group.add(hairCap);
+      hairCap.position.y = 1.87; staticGroup.add(hairCap);
       [-0.095, 0.095].forEach(function (x) {
-        group.add(box(0.055, 0.045, 0.02, dark, x, 1.88, 0.222));
-        group.add(box(0.075, 0.022, 0.02, hair, x, 1.95, 0.222));
+        staticGroup.add(box(0.055, 0.045, 0.02, dark, x, 1.88, 0.222));
+        staticGroup.add(box(0.075, 0.022, 0.02, hair, x, 1.95, 0.222));
       });
-      group.add(box(0.07, 0.09, 0.09, skin, 0, 1.8, 0.24));
-      group.add(box(0.13, 0.022, 0.02, lam(0x8c5a4c), 0, 1.71, 0.235));
+      staticGroup.add(box(0.07, 0.09, 0.09, skin, 0, 1.8, 0.24));
+      staticGroup.add(box(0.13, 0.022, 0.02, lam(0x8c5a4c), 0, 1.71, 0.235));
 
       // Limbs are groups pivoting at shoulder / hip so walking looks natural.
       function arm(side) {
@@ -273,13 +295,13 @@
       if (o.hat) {
         const hat = lam(o.hat);
         const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.27, 0.15, 10), hat);
-        crown.position.y = 2.09; group.add(crown);
+        crown.position.y = 2.09; staticGroup.add(crown);
         const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.035, 10), hat);
-        brim.position.set(0, 2.01, 0.14); group.add(brim);
+        brim.position.set(0, 2.01, 0.14); staticGroup.add(brim);
       }
-      if (o.bag) group.add(box(0.45, 0.6, 0.26, lam(o.bag), 0, 1.19, -0.36));
+      if (o.bag) staticGroup.add(box(0.45, 0.6, 0.26, lam(o.bag), 0, 1.19, -0.36));
 
-      if (o.mergeStatic) mergeStaticCharacter(group);
+      mergeStaticCharacter(staticGroup);
 
       const blob = CC.EnvironmentManager
         ? CC.EnvironmentManager.attachBlobShadow(group, 1.15, 0.028, 1.05) : null;
@@ -721,6 +743,7 @@
       this.exploded = false;
       this.damageFx.smoke.forEach(function (m) { m.material.opacity = 0; });
       this.damageFx.flames.forEach(function (m) { m.material.opacity = 0; });
+      this.damageFx.group.visible = false;
     }
 
     registerCrash(impact) {
@@ -776,24 +799,32 @@
         if (prevStage > 0) {
           this.damageFx.smoke.forEach(function (m) { m.material.opacity = 0; });
           this.damageFx.flames.forEach(function (m) { m.material.opacity = 0; });
+          this.damageFx.group.visible = false;
         }
         return;
       }
+      this.damageFx.group.visible = true;
       const smokeAmt = this.fuse > 0 ? 1 : burning ? 0.95
         : U.clamp(0.45 + (this.damage - 0.4) * 1.4, 0.45, 0.85);
       const fireAmt = (stage >= 2 || this.fuse > 0)
         ? U.clamp(0.7 + (this.damage - 0.7) * 1.2, 0.55, 1) : 0;
+      const showSmoke = smokeAmt > 0;
       this.damageFx.smoke.forEach(function (m) {
         const d = m.userData;
         const rise = (time * 0.5 + d.phase) % 2;
+        m.visible = showSmoke;
+        if (!showSmoke) return;
         m.position.set(d.bx + Math.sin(time * 1.4 + d.phase) * 0.25,
           1.05 + rise * 1.8, d.bz + Math.cos(time * 1.1 + d.phase) * 0.2);
         m.scale.setScalar(d.base * (0.6 + rise * 0.9));
         m.material.opacity = smokeAmt * Math.max(0, 0.42 - rise * 0.18);
       });
+      const showFlames = fireAmt > 0;
       this.damageFx.flames.forEach(function (m) {
         const d = m.userData;
         const flick = 0.55 + 0.45 * Math.sin(time * 12 + d.phase);
+        m.visible = showFlames;
+        if (!showFlames) return;
         m.scale.set(d.base, d.base * (0.7 + flick * 0.7), d.base);
         m.material.opacity = fireAmt * (0.45 + flick * 0.45);
       });

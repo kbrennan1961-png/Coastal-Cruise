@@ -5855,7 +5855,8 @@
     }
     if (!stalks.length) return;
     const dummy = new THREE.Object3D();
-    if (CC.AssetVegetation && CC.AssetVegetation.available !== false) {
+    if (!(CC.perfQuality && CC.perfQuality < 0.75) && CC.AssetVegetation &&
+        CC.AssetVegetation.available !== false) {
       // The CC0 grass model makes much richer marsh edges than the old cylinders.
       stalks.forEach(function (p) {
         CC.AssetVegetation.queue('grass', p.x, CC.heightAt(p.x, p.z), p.z,
@@ -5948,7 +5949,8 @@
         if (rng() < 0.3) tips.push({ x: x, z: z, s: s * 0.85 });
       }
     });
-    if (stalks.length && CC.AssetVegetation && CC.AssetVegetation.available !== false) {
+    if (stalks.length && !(CC.perfQuality && CC.perfQuality < 0.75) &&
+        CC.AssetVegetation && CC.AssetVegetation.available !== false) {
       stalks.forEach(function (p) {
         CC.AssetVegetation.queue('grass', p.x, CC.heightAt(p.x, p.z), p.z, p.s * 1.9, p.r);
       });

@@ -120,9 +120,10 @@
       });
       this.clouds = new THREE.Group();
       this.cloudParts = [];
-      for (let i = 0; i < 18; i++) {
+      // Fewer, larger puffs keep the sky full while cutting ~70 cloud draws.
+      for (let i = 0; i < 12; i++) {
         const cloud = new THREE.Group();
-        const puffs = 6 + Math.floor(Math.random() * 4);
+        const puffs = 4 + Math.floor(Math.random() * 2);
         for (let j = 0; j < puffs; j++) {
           const puff = new THREE.Mesh(
             new THREE.IcosahedronGeometry(U.randRange(Math.random, 32, 50), 0),

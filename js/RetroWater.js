@@ -229,9 +229,9 @@
     const height = size && size.height ? size.height : W.maxZ - W.minZ;
     const cx = size && size.cx != null ? size.cx : (W.minX + W.maxX) * 0.5;
     const cz = size && size.cz != null ? size.cz : (W.minZ + W.maxZ) * 0.5;
-    // 48 subdivisions still leaves the low-poly facets visible while cutting
-    // the per-frame vertex work by nearly half versus 64.
-    const segments = size && size.segments ? size.segments : 48;
+    // 32 subdivisions keeps the visible facets while cutting the per-frame
+    // wave upload by more than half compared with the old 48x48 sheet.
+    const segments = size && size.segments ? size.segments : 32;
     const masks = makeWaterMasks();
     const texA = makePixelWaterTexture(14, { phase: 0 });
     const texB = makePixelWaterTexture(20, { phase: 3, ridgesOnly: true });

@@ -22,6 +22,9 @@
   const rng = CC.rng(20261119);
   const tmpMat = {};
   const boxGeoCache = Object.create(null);
+  // Density budgets. The baked trees are high-poly; cutting their count is the
+  // cheapest way to keep the same town silhouette without multi-second frames.
+  const SCENERY = { trees: 650, beachPalms: 95, groundCover: 650 };
 
   // Tree, shrub, palm and rock placement tests run tens of thousands of times
   // at startup. Build the reserved-zone list once instead of concatenating a
@@ -123,7 +126,7 @@
   function buildOcean(scene) {
     if (CC.RetroWater) {
       CC.RetroWater.createRetroWater(scene, {
-        width: 1500, height: 1300, cx: 0, cz: 10, segments: 48
+        width: 1500, height: 1300, cx: 0, cz: 10, segments: 32
       });
     }
   }
@@ -428,7 +431,9 @@
     const y = CC.heightAt(x, z);
     const rotation = rng() * Math.PI * 2;
     let s = U.randRange(rng, 0.8, 1.25);
-    if (type !== 'palm' && CC.AssetVegetation && CC.AssetVegetation.available !== false) {
+    const useBakedVegetation = !(CC.perfQuality && CC.perfQuality < 0.75);
+    if (type !== 'palm' && useBakedVegetation && CC.AssetVegetation &&
+        CC.AssetVegetation.available !== false) {
       // The CC0 nature models replace the old cone/icosahedron trees. Palms are
       // kept procedural because the pack has no coastal palm.
       let model = 'pine';
@@ -735,7 +740,8 @@
     const lawnGeo = {};
     const retroNames = ['retro1', 'retro2', 'retro3', 'retro4', 'retro5'];
     const trailerNames = ['trailer1', 'trailer2', 'trailer3', 'trailer4', 'trailer5', 'trailer6'];
-    const canUseAssets = CC.AssetBuildings && CC.AssetLoader && CC.AssetLoader.footprint;
+    const canUseAssets = CC.AssetBuildings && CC.AssetLoader && CC.AssetLoader.footprint &&
+      !(CC.perfQuality && CC.perfQuality < 0.75);
     (World.imageBuildings || []).forEach(function (b, i) {
       const y = Math.max(0, CC.heightAt(b.x, b.z));
       const key = b.w + 'x' + b.l;
@@ -901,7 +907,7 @@
     let placed = 0, palms = 0, attempts = 0;
     // More of the same baked Nature_Terrain trees, with a slightly wider road
     // margin so the larger broadleaf canopies never hang over the shoulder.
-    while (placed < 1100 && attempts < 55000) {
+    while (placed < SCENERY.trees && attempts < 55000) {
       attempts++;
       const x = U.randRange(rng, C.WORLD.minX + 12, C.WORLD.maxX - 12);
       const z = U.randRange(rng, C.WORLD.minZ + 12, C.WORLD.maxZ - 12);
@@ -930,13 +936,13 @@
     }
     World.treeCount = placed;
     World.palmCount = palms;
-    World.imageTreeTarget = 1100;
+    World.imageTreeTarget = SCENERY.trees;
 
     // Extra shoreline palms. The general woods pass only picks a palm around
     // half the time on sand, so this dedicated sweep fills the beachfront with
     // a denser tropical line while still avoiding roads, buildings and sites.
     let beachPalms = 0, beachAttempts = 0;
-    while (beachPalms < 170 && beachAttempts < 32000) {
+    while (beachPalms < SCENERY.beachPalms && beachAttempts < 32000) {
       beachAttempts++;
       const x = U.randRange(rng, C.WORLD.minX + 8, C.WORLD.maxX - 8);
       const z = U.randRange(rng, C.WORLD.minZ + 8, C.WORLD.maxZ - 8);
@@ -959,10 +965,11 @@
 
     // CC0 ferns, bushes, grass, flowers and rocks replace most of the old
     // scattered vegetation, batched into one instanced draw per model.
-    if (CC.AssetVegetation && CC.AssetVegetation.available !== false) {
+    if (!(CC.perfQuality && CC.perfQuality < 0.75) && CC.AssetVegetation &&
+        CC.AssetVegetation.available !== false) {
       let cover = 0, coverAttempts = 0;
       // Denser baked shrubbery from the same CC0 Nature_Terrain pack.
-      while (cover < 1200 && coverAttempts < 60000) {
+      while (cover < SCENERY.groundCover && coverAttempts < 60000) {
         coverAttempts++;
         const x = U.randRange(rng, C.WORLD.minX + 14, C.WORLD.maxX - 14);
         const z = U.randRange(rng, C.WORLD.minZ + 14, C.WORLD.maxZ - 14);
@@ -994,7 +1001,7 @@
         cover++;
       }
       World.assetGroundCover = cover;
-      World.bakedCoverTarget = 1200;
+      World.bakedCoverTarget = SCENERY.groundCover;
     }
 
     // Downloaded rock pack: scatter the five individually baked stones across

@@ -4073,7 +4073,7 @@
       const roads = npcTrafficRoads
         .slice().sort((a, b) => b._length - a._length).slice(0, 14);
       roads.forEach(function (road) {
-        const count = 3;
+        const count = 2;
         for (let i = 0; i < count; i++) {
           let dir = road.oneWay ? road.oneWay : (rng() < 0.5 ? 1 : -1);
           const s = (i + 0.35 + rng() * 0.3) / count * road._length;
@@ -4111,7 +4111,7 @@
         return r._length > 180 && !r._hiddenStart && !r._hiddenEnd;
       });
       if (!patrolRoads.length) patrolRoads.push.apply(patrolRoads, roads);
-      for (let i = 0; i < 6 && patrolRoads.length; i++) {
+      for (let i = 0; i < 4 && patrolRoads.length; i++) {
         const road = patrolRoads[i % patrolRoads.length];
         const dir = i % 2 ? -1 : 1;
         const s = U.randRange(rng, 18, road._length - 18);
@@ -4132,7 +4132,7 @@
       const paved = CC.roadDefs.filter(r => r.type === 'paved' && r._length > 4);
       const carColors = [0xb9b6aa, 0x6d889f, 0xb56d5e, 0x8ca178, 0xc7a755, 0x707b84, 0xd9dde0];
       const parkedKinds = ['car', 'car', 'truck', 'coupe', 'muscleCar', 'taxi', 'limo', 'offroad', 'compact'];
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 12; i++) {
         const spot = findParkSpot(NPCSystem.parkedCars);
         if (!spot) break;
         const kind = U.pick(rng, parkedKinds);
@@ -4250,7 +4250,7 @@
       }
 
       // Sidewalk strollers.
-      for (let i = 0; i < 18 && paved.length; i++) {
+      for (let i = 0; i < 12 && paved.length; i++) {
         const road = U.pick(rng, paved);
         const p = CC.sampleRoad(road, rng() * road._length);
         const side = rng() < 0.5 ? 1 : -1;
@@ -4259,7 +4259,7 @@
         makePedAt(x, z, rng() < 0.4 ? 'walk' : 'idle');
       }
       // Beat cops walking the streets and guarding the station entrance.
-      for (let i = 0; i < 12 && paved.length; i++) {
+      for (let i = 0; i < 8 && paved.length; i++) {
         const road = U.pick(rng, paved);
         const p = CC.sampleRoad(road, rng() * road._length);
         const side = rng() < 0.5 ? 1 : -1;
@@ -4291,7 +4291,7 @@
       }
 
       // Beach walkers and fishers.
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 7; i++) {
         const south = rng() < 0.55;
         let x, z;
         if (south) {
@@ -4308,7 +4308,7 @@
       const bwx = CC.Details && CC.Details.boardwalkPath;
       if (bwx) {
         const bwPath = { minZ: -338, maxZ: -204, xAt: bwx, offset: 0 };
-        for (let i = 0; i < 14; i++) {
+        for (let i = 0; i < 9; i++) {
           const z = U.randRange(rng, bwPath.minZ, bwPath.maxZ);
           const owner = {
             path: { minZ: bwPath.minZ, maxZ: bwPath.maxZ, xAt: bwx,
@@ -4570,6 +4570,35 @@
       trafficCtx.drivers.push.apply(trafficCtx.drivers, this.gangCars);
       trafficCtx.soldiers = this.soldiers;
       trafficCtx.pedestrians = this.pedestrians;
+      // Vehicles are far more expensive to draw than to simulate. Keep every
+      // car's AI running, but skip rendering groups beyond the fog band.
+      const vpx = player.pos.x, vpz = player.pos.z;
+      const q = CC.perfQuality || 1;
+      const cullVehicles = function (list, radius) {
+        const r2 = radius * radius;
+        for (let i = 0; i < list.length; i++) {
+          const car = list[i];
+          const group = car && car.group;
+          if (!group || car.disabled) continue;
+          const p = car.pos || group.position;
+          const dx = p.x - vpx, dz = p.z - vpz;
+          const show = dx * dx + dz * dz < r2;
+          if (group.visible !== show) group.visible = show;
+        }
+      };
+      cullVehicles(this.traffic, 200 * q);
+      cullVehicles(this.buses, 200 * q);
+      cullVehicles(this.policeCars, 200 * q);
+      cullVehicles(this.gangCars, 200 * q);
+      for (let i = 0; i < this.parkedCars.length; i++) {
+        const car = this.parkedCars[i];
+        if (car.stolen) { if (car.group.visible) car.group.visible = false; continue; }
+        const p = car.group.position;
+        const dx = p.x - vpx, dz = p.z - vpz;
+        const parkedR = 160 * q;
+        const show = dx * dx + dz * dz < parkedR * parkedR;
+        if (car.group.visible !== show) car.group.visible = show;
+      }
       // Lead-car checks only need cars on the same road. Rebuild this small
       // index once per frame instead of scanning every car from every car.
       const byRoad = trafficCtx.trafficByRoad ||
@@ -4632,7 +4661,8 @@
         const ped = this.pedestrians[i];
         const dx = ped.position.x - px, dz = ped.position.z - pz;
         const d2 = dx*dx + dz*dz;
-        const vis = d2 < 170*170;
+        const pedR = 170 * q;
+        const vis = d2 < pedR * pedR;
         ped.group.visible = vis;
         if (!vis) continue;
         if (d2 < 65*65 || this._doAnim || ped.isGang || ped.alerted || ped.fleeing) ped.update(dt, player, world);
@@ -4644,7 +4674,8 @@
       for (let i = 0; i < this.dogs.length; i++) {
         const a = this.dogs[i];
         const dx = a.position.x - px, dz = a.position.z - pz;
-        const far = dx*dx + dz*dz > 180*180;
+        const dogR = 180 * q;
+        const far = dx*dx + dz*dz > dogR * dogR;
         a.group.visible = !far;
         if (far) continue;
         const ox = a.position.x, oz = a.position.z;
@@ -4657,7 +4688,8 @@
       for (let i = 0; i < this.critters.length; i++) {
         const a = this.critters[i];
         const dx = a.position.x - px, dz = a.position.z - pz;
-        const far = dx*dx + dz*dz > 160*160;
+        const critterR = 160 * q;
+        const far = dx*dx + dz*dz > critterR * critterR;
         a.group.visible = !far;
         if (far) continue;
         const ox = a.position.x, oz = a.position.z;
@@ -4671,20 +4703,23 @@
         const b = this.birds[i];
         if (b.disabled) continue;
         const dx = b.group.position.x - px, dz = b.group.position.z - pz;
-        const vis = dx*dx + dz*dz < 260*260;
+        const birdR = 260 * q;
+        const vis = dx*dx + dz*dz < birdR * birdR;
         b.group.visible = vis;
         if (vis) b.update(dt);
       }
       for (let i = 0; i < this.ducks.length; i++) {
         const d = this.ducks[i];
         const dx = d.group.position.x - px, dz = d.group.position.z - pz;
-        const vis = dx*dx + dz*dz < 220*220;
+        const duckR = 220 * q;
+        const vis = dx*dx + dz*dz < duckR * duckR;
         d.group.visible = vis; if (vis) d.update(dt, player);
       }
       for (let i = 0; i < this.alligators.length; i++) {
         const g = this.alligators[i];
         const dx = g.group.position.x - px, dz = g.group.position.z - pz;
-        const vis = dx*dx + dz*dz < 220*220;
+        const gatorR = 220 * q;
+        const vis = dx*dx + dz*dz < gatorR * gatorR;
         g.group.visible = vis; if (vis) g.update(dt, player);
       }
       for (let i = 0; i < this.aircraft.length; i++) {

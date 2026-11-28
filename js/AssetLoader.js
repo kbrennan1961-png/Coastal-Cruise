@@ -17,6 +17,14 @@
   const texturedMaterials = {};
   const houseMaterials = {};
 
+  // Every tiled InstancedMesh created below is tracked here so gameplay can
+  // distance-cull whole tiles as a cheap LOD on slow GPUs. Without this the
+  // detailed CC0 houses keep every tile in the frustum submitted, which is
+  // thousands of triangles per tile even when they are far beyond the fog.
+  const staticBatches = [];
+  let batchTimer = 0;
+  CC.AssetBatches = staticBatches;
+
   function decode(part, field, Ctor) {
     if (!part._decoded) part._decoded = {};
     if (part._decoded[field]) return part._decoded[field];
@@ -175,6 +183,18 @@
     return staticRoleMaterial(part.role || 'default', color);
   }
 
+  // Vehicle trim never changes per car. Sharing these avoids hundreds of
+  // identical materials and shader program permutations in traffic-heavy views.
+  const sharedVehicleMats = {
+    trimDark: new THREE.MeshLambertMaterial({ color: 0x252a2d, flatShading: true }),
+    trim: new THREE.MeshLambertMaterial({ color: 0x777d80, flatShading: true }),
+    tire: new THREE.MeshLambertMaterial({ color: 0x24282b, flatShading: true }),
+    glass: new THREE.MeshStandardMaterial({
+      color: 0x3a6b83, emissive: 0x0b1a22, metalness: 0.18, roughness: 0.22,
+      transparent: true, opacity: 0.78, side: THREE.DoubleSide
+    })
+  };
+
   let staticWheelMats = null;
   function getStaticWheelMats() {
     if (staticWheelMats) return staticWheelMats;
@@ -191,6 +211,27 @@
 
     geometry: geometry,
     paletteMaterial: paletteMaterial,
+
+    /* Cheap distance LOD for the tiled house/rock/vegetation instance pools.
+       Frustum culling alone keeps distant tiles that are still inside the
+       camera; this drops them entirely once the adaptive quality tier falls. */
+    updateBatches: function (playerPos, dt, radius) {
+      if (!playerPos || !staticBatches.length) return;
+      batchTimer -= dt || 0;
+      if (batchTimer > 0) return;
+      batchTimer = 0.3;
+      const r = radius || 520;
+      for (let i = 0; i < staticBatches.length; i++) {
+        const mesh = staticBatches[i];
+        const bs = mesh.boundingSphere;
+        if (!bs) continue;
+        const dx = bs.center.x - playerPos.x;
+        const dz = bs.center.z - playerPos.z;
+        const rr = r + bs.radius;
+        const visible = dx * dx + dz * dz < rr * rr;
+        if (mesh.visible !== visible) mesh.visible = visible;
+      }
+    },
 
     /* Runtime registration for models baked by the Blender prompt workflow.
        The map editor calls this when a generated result JSON is imported, so
@@ -250,13 +291,10 @@
       const materials = {
         body: bodyMaterial(color),
         bodyAccent: bodyMaterial(accent),
-        trimDark: new THREE.MeshLambertMaterial({ color: 0x252a2d, flatShading: true }),
-        trim: new THREE.MeshLambertMaterial({ color: 0x777d80, flatShading: true }),
-        tire: new THREE.MeshLambertMaterial({ color: 0x24282b, flatShading: true }),
-        glass: new THREE.MeshStandardMaterial({
-          color: 0x3a6b83, emissive: 0x0b1a22, metalness: 0.18, roughness: 0.22,
-          transparent: true, opacity: 0.78, side: THREE.DoubleSide
-        })
+        trimDark: sharedVehicleMats.trimDark,
+        trim: sharedVehicleMats.trim,
+        tire: sharedVehicleMats.tire,
+        glass: sharedVehicleMats.glass
       };
       const brakeMat = new THREE.MeshStandardMaterial({
         color: 0x7a2018, emissive: 0x000000, roughness: 0.4
@@ -436,6 +474,7 @@
       mesh.frustumCulled = true;
       mesh.computeBoundingSphere();
       scene.add(mesh);
+      staticBatches.push(mesh);
       count += bucket.length;
     });
     return count;

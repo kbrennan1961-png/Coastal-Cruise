@@ -715,6 +715,10 @@
     hudCanvasTimer: 0,
     hudTextTimer: 0,
     time: 0,
+    // Adaptive detail tier. Only drops on sustained slow frames, so fast GPUs
+    // keep the full town while weak/software renderers stay playable.
+    detailQuality: 1,
+    qualityTimer: 4,
     activeChallenge: null,
     challengeElapsed: 0,
     gateIndex: 0,
@@ -1044,10 +1048,10 @@
     if (startBtn) { startBtn.disabled = true; startBtn.style.display = 'none'; }
     const startArea = $('splashStartArea');
     if (startArea) startArea.style.display = 'none';
-    // Hide splash UI and hold on the B&W loaded town for 5 seconds, then start.
+    // Brief loaded-town beat before free roam. Five seconds felt like a hang.
     setSplashReady(true);
     clearAutoStart();
-    autoStartTimer = setTimeout(function () { finishStart(); }, 5000);
+    autoStartTimer = setTimeout(function () { finishStart(); }, 1500);
   }
 
   function finishStart() {
@@ -2104,11 +2108,27 @@
       document.documentElement.setAttribute('data-boot-stage', name);
     };
     mark('scene/renderer');
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    // Retina screens can quadruple the fill cost for very little visual gain
-    // in this flat-shaded world. 1.25 keeps the image crisp without the stall.
-    // Adaptive resolution can lower this at runtime if frames get expensive.
-    const basePixelRatio = Math.min(window.devicePixelRatio || 1, 1.25);
+    // MSAA is very expensive on software/low-end GPUs and this world is mostly
+    // flat-shaded; a slightly lower pixel ratio is a much better trade.
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    // Software GPUs cannot push the baked 3k-triangle house meshes at a usable
+    // frame rate. Detect them up front so World builds the cheap procedural
+    // homes instead, and start the whole scene at the low detail tier.
+    let glName = '';
+    try {
+      const gl = renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      glName = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || '');
+    } catch (e) {}
+    const softwareRenderer = /swiftshader|software|llvmpipe|softpipe|mesa offscreen/i.test(glName);
+    Game.softwareRenderer = softwareRenderer;
+    if (softwareRenderer) {
+      Game.detailQuality = 0.5;
+      CC.perfQuality = 0.5;
+    }
+    // Cap at 1x (instead of Retina 1.25x+) to cut fill cost by ~36% on HIDPI.
+    // Software renderers start lower; adaptive resolution can lower it further.
+    const basePixelRatio = Math.min(window.devicePixelRatio || 1, softwareRenderer ? 0.75 : 1);
     Game.basePixelRatio = basePixelRatio;
     renderer.setPixelRatio(basePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2199,6 +2219,9 @@
     // widens the radius again once START is pressed.
     if (CC.StaticBatcher && CC.StaticBatcher.update) {
       CC.StaticBatcher.update(Game.vehicles[Game.activeKey].pos, 1, 420);
+    }
+    if (CC.AssetLoader && CC.AssetLoader.updateBatches) {
+      CC.AssetLoader.updateBatches(Game.vehicles[Game.activeKey].pos, 1, 420);
     }
 
     mark('scene/npcs');
@@ -4004,22 +4027,35 @@
 
     // Keep the frame rate smooth on slower GPUs by trading a little resolution
     // for time. The shift is gradual and hysteretic so it never oscillates.
-    if (!Game.mapOpen && rawDt > 0 && rawDt < 0.25) {
-      Game.frameAvg = Game.frameAvg ? Game.frameAvg * 0.92 + rawDt * 0.08 : rawDt;
-      Game.resCooldown = (Game.resCooldown || 0) - dt;
+    // Extreme frames must count too; the old <0.25s guard meant a 5-second
+    // stall could never trigger the safety valve.
+    if (!Game.mapOpen && rawDt > 0 && rawDt < 10) {
+      Game.frameAvg = Game.frameAvg ? Game.frameAvg * 0.9 + rawDt * 0.1 : rawDt;
+      const stepDt = Math.min(rawDt, 2);
+      Game.resCooldown = (Game.resCooldown || 0) - stepDt;
+      Game.qualityTimer = (Game.qualityTimer || 0) - stepDt;
       if (Game.resCooldown <= 0) {
-        Game.resCooldown = 2;
-        if (!Game.renderer) return;
-        const ratio = Game.renderer.getPixelRatio();
-        let next = ratio;
-        if (Game.frameAvg > 0.0195 && ratio > 0.7) next = Math.max(0.7, ratio - 0.1);
-        else if (Game.frameAvg < 0.0135 && ratio < Game.basePixelRatio) {
-          next = Math.min(Game.basePixelRatio, ratio + 0.05);
+        Game.resCooldown = 1.5;
+        if (Game.renderer) {
+          const ratio = Game.renderer.getPixelRatio();
+          let next = ratio;
+          if (Game.frameAvg > 0.024 && ratio > 0.6) next = Math.max(0.6, ratio - 0.15);
+          else if (Game.frameAvg < 0.0135 && ratio < Game.basePixelRatio) {
+            next = Math.min(Game.basePixelRatio, ratio + 0.05);
+          }
+          // setPixelRatio already resizes the drawing buffer in Three r160.
+          // Calling setSize again forces a second GPU allocation in the same
+          // frame, which is a reliable source of short lockups.
+          if (next !== ratio) Game.renderer.setPixelRatio(next);
         }
-        // setPixelRatio already resizes the drawing buffer in Three r160.
-        // Calling setSize again forces a second GPU allocation in the same
-        // frame, which is a reliable source of short lockups.
-        if (next !== ratio) Game.renderer.setPixelRatio(next);
+      }
+      if (Game.qualityTimer <= 0) {
+        Game.qualityTimer = 4;
+        let q = Game.detailQuality || 1;
+        if (Game.frameAvg > 0.045 && q > 0.5) q = q === 1 ? 0.75 : 0.5;
+        else if (Game.frameAvg < 0.02 && q < 1) q = q === 0.5 ? 0.75 : 1;
+        Game.detailQuality = q;
+        CC.perfQuality = q;
       }
     }
     if (renderWorld && CC.Drawbridges) CC.Drawbridges.update(dt, Game.time);
@@ -4097,8 +4133,14 @@
     if (renderWorld) {
       CC.Weather.update(dt, Game.time, v);
       CC.LightingSystem.update(dt, Game.time, v, CC.Weather);
+      const q = Game.detailQuality || 1;
       if (CC.StaticBatcher && CC.StaticBatcher.update) {
-        CC.StaticBatcher.update(v.pos, dt, 560);
+        const staticRadius = q >= 1 ? 560 : q >= 0.75 ? 400 : 280;
+        CC.StaticBatcher.update(v.pos, dt, staticRadius);
+      }
+      if (CC.AssetLoader && CC.AssetLoader.updateBatches) {
+        const assetRadius = q >= 1 ? 520 : q >= 0.75 ? 380 : 260;
+        CC.AssetLoader.updateBatches(v.pos, dt, assetRadius);
       }
     }
 
