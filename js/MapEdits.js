@@ -5,7 +5,7 @@
   var CC = window.CC = window.CC || {};
   CC.mapEdits = {
   "version": 1,
-  "generated": "2026-11-27T20:34:11.300Z",
+  "generated": "2026-11-27T21:06:51.689Z",
   "active": true,
   "newMap": false,
   "standaloneGame": false,
@@ -322,7 +322,7 @@
       "_length": 363.9112413679548
     },
     {
-      "name": "Dune Road B",
+      "name": "Dune Road B A",
       "type": "paved",
       "width": 10,
       "closed": false,
@@ -332,12 +332,34 @@
           166.07988854497538
         ],
         [
-          -215,
-          240
+          -235.86114971434571,
+          211.5529776622558
+        ]
+      ],
+      "noNpcCars": true,
+      "_index": 7,
+      "_cum": [
+        0,
+        88.60022573334676,
+        166.8626049458394,
+        259.86798113453074,
+        363.9112413679548
+      ],
+      "_length": 363.9112413679548
+    },
+    {
+      "name": "Dune Road B B A",
+      "type": "paved",
+      "width": 10,
+      "closed": false,
+      "points": [
+        [
+          -235.86114971434571,
+          211.5529776622558
         ],
         [
-          -130,
-          300
+          -235.4151138544332,
+          212.16120838031833
         ]
       ],
       "noNpcCars": true,
