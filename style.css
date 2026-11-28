@@ -184,7 +184,20 @@ html, body {
 #gauge { display: block; }
 
 /* minimap */
-#minimapWrap { top: 8px; left: 8px; bottom: auto; right: auto; padding: 7px; pointer-events: auto; z-index: 12; }
+#minimapWrap {
+  top: 8px; left: 8px; bottom: auto; right: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: auto;
+  z-index: 12;
+}
+#minimapWrap .panelHead, #minimapWrap .navInfo { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
+#minimapWrap .navInfo { margin-top: 4px; padding-top: 0; border-top: 0; }
 #minimapWrap.collapsed #minimap { display: none; }
 #minimap { display: block; border-radius: 50%; image-rendering: auto; cursor: pointer; border: 2px solid rgba(159, 230, 255, 0.45); box-shadow: 0 0 18px rgba(98, 224, 255, 0.18); }
 .navInfo {
