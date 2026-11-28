@@ -8,7 +8,7 @@
   const U = CC.util;
 
   const System = (CC.CrimeSystem = {
-    money: 12000000,
+    money: 500,
     inventory: [],
     assaults: 0,
     robberies: 0,
@@ -36,8 +36,8 @@
     updateHud: function () {
       if (!this.hud) this.ensureHud();
       const value = Math.max(0, Math.round(this.money));
-      const grouped = String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-      if (this.hud) this.hud.textContent = '$' + grouped;
+      const padded = String(value).padStart(8, '0');
+      if (this.hud) this.hud.textContent = '$' + padded;
     },
 
     addMoney: function (amount) {
