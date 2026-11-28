@@ -3333,6 +3333,7 @@
         this.evadeTimer = 0;
         this.wantedGainCooldown = 0;
       }
+      if (changed && CC.Game && CC.Game.updateWantedHud) CC.Game.updateWantedHud();
       return changed;
     },
 

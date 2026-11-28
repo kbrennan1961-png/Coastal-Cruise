@@ -1460,19 +1460,19 @@
     const el = $('wantedBadge');
     if (!el) return;
     const N = CC.NPCSystem;
-    const stars = N ? N.wantedStars || 0 : 0;
+    const stars = Math.max(0, Math.min(5, N ? N.wantedStars || 0 : 0));
     el.classList.toggle('show', stars > 0);
-    if (!stars) { el.textContent = ''; return; }
-    const remaining = Math.max(0, (N.EVADE_SECONDS || 180) - (N.evadeTimer || 0));
-    const mm = Math.floor(remaining / 60);
-    const ss = Math.floor(remaining % 60);
-    const timed = String(ss).padStart(2, '0');
-    const html = '<span class="wantedStars">' + '★'.repeat(stars) +
-      '<span class="wantedEmpty">' + '☆'.repeat(Math.max(0, 5 - stars)) + '</span>' +
-      '</span><span class="wantedLabel">WANTED</span>' +
-      '<span class="wantedTime">' + mm + ':' + timed + '</span>';
+    if (!stars) { if (el.innerHTML) el.textContent = ''; return; }
+    let html = '<span class="wantedStars" aria-label="Wanted level ' + stars + ' of 5">';
+    for (let i = 0; i < 5; i++) {
+      const filled = i < stars;
+      html += '<span class="wantedStar' + (filled ? ' filled' : '') + '">' +
+        (filled ? '★' : '☆') + '</span>';
+    }
+    html += '</span>';
     if (el.innerHTML !== html) el.innerHTML = html;
   }
+  Game.updateWantedHud = updateWantedHud;
 
   function cycleWeather() {
     if (!CC.Weather) return;
